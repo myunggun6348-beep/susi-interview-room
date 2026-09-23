@@ -791,9 +791,86 @@ function quoteTag(state){
   return t && h("span",{class:"chip "+t[1],style:"margin-left:6px",text:t[0]});
 }
 
+/* ───────── 한글·워드 파일(.docx)로 저장 ───────── */
+const xmlEsc = t => String(t ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const FONT = '<w:rFonts w:ascii="맑은 고딕" w:eastAsia="맑은 고딕" w:hAnsi="맑은 고딕"/>';
+// sz는 half-point(22 = 11pt), ind는 왼쪽 들여쓰기(twip)
+function P(text, o = {}){
+  const rpr = FONT + (o.b ? "<w:b/>" : "") + `<w:sz w:val="${o.sz||22}"/><w:szCs w:val="${o.sz||22}"/>` + (o.color ? `<w:color w:val="${o.color}"/>` : "");
+  const ppr = `<w:pPr><w:spacing w:before="${o.before||0}" w:after="${o.after||60}" w:line="288" w:lineRule="auto"/>`
+    + (o.ind ? `<w:ind w:left="${o.ind}"/>` : "") + "</w:pPr>";
+  const runs = String(text ?? "").split("\n").map((t,i) =>
+    (i ? "<w:r><w:br/></w:r>" : "") + `<w:r><w:rPr>${rpr}</w:rPr><w:t xml:space="preserve">${xmlEsc(t)}</w:t></w:r>`).join("");
+  return `<w:p>${ppr}${runs}</w:p>`;
+}
+function sheetDocx(s){
+  const sh = s.sheet, c = sh.career, out = [];
+  out.push(P(`${s.name||"학생"} — 면접 예상질문지`, {b:true, sz:34, after:40}));
+  out.push(P(`${[s.univ,s.dept,s.track].filter(Boolean).join(" · ")} / 면접일 ${s.date||"미정"} / ${s.itype||""}`, {sz:18, color:"666666", after:180}));
+  if (c){
+    out.push(P("학생부로 본 진로", {b:true, sz:20, color:"1E6B57", after:20}));
+    out.push(P(c.title||"", {b:true, sz:28, after:20}));
+    out.push(P([c.field && "분야 "+c.field, c.fit?.level && `지원 학과 연결 ${c.fit.level}${c.fit.note ? " — "+c.fit.note : ""}`].filter(Boolean).join(" / "), {sz:19, color:"666666"}));
+    for (const b of c.basis||[]) out.push(P(`· ${b.grade} ${b.point}`, {sz:19, ind:200}));
+    if (c.shift) out.push(P("진로 변화 · "+c.shift, {sz:19, color:"666666"}));
+  }
+  out.push(P("한 줄 서사", {b:true, sz:24, before:220, after:40}));
+  out.push(P(sh.narrative||"", {after:120}));
+  out.push(P(`반드시 준비할 지뢰 항목 (${(sh.mines||[]).length}개)`, {b:true, sz:24, before:220, after:40}));
+  for (const m of sh.mines||[]){
+    out.push(P(`${m.item||""}  [${m.source||""}] 준비 수준: ${m.ready||"미확인"}`, {b:true, after:20}));
+    out.push(P(`근거 “${m.evidence||""}”`, {sz:19, color:"666666", ind:200, after:20}));
+    for (const q of m.questions||[]) out.push(P("– "+q, {ind:200}));
+  }
+  out.push(P("영역별 예상질문", {b:true, sz:24, before:220, after:40}));
+  let n = 0;
+  for (const sec of sh.sections||[]){
+    out.push(P(`${sec.area} · ${(sec.questions||[]).length}문항`, {b:true, sz:20, color:"1E6B57", before:160, after:40}));
+    for (const q of sec.questions||[]){
+      n++;
+      out.push(P(`Q${n}. ${q.q||""}`, {b:true, before:100, after:20}));
+      out.push(P(`근거 “${q.evidence||""}” [${q.source||""}]`, {sz:19, color:"666666", ind:280, after:20}));
+      out.push(P(`키워드 ${(q.keywords||[]).join(" / ")}`, {sz:19, ind:280, after:20}));
+      out.push(P(`뼈대 ${q.skeleton||""}`, {sz:19, ind:280, after:20}));
+      for (const t of q.tails||[]) out.push(P("꼬리질문 "+t, {sz:19, ind:280, after:20}));
+    }
+  }
+  out.push(P("마지막 한마디 (1분)", {b:true, sz:24, before:220, after:40}));
+  out.push(P(sh.closing||"", {after:120}));
+  out.push(P("담임 체크리스트", {b:true, sz:24, before:220, after:40}));
+  for (const t of ["지뢰 항목 개념을 설명할 수 있다","블라인드 위반 표현이 없다","답변이 60초를 넘지 않는다","모든 답변이 학생부 근거를 갖는다"]) out.push(P("□ "+t));
+  out.push(P("완성 답변은 일부러 넣지 않았습니다. 학생이 키워드와 뼈대로 직접 말하게 해 주세요.", {sz:18, color:"666666", before:160}));
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${out.join("")}
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr></w:body></w:document>`;
+}
+async function exportDocx(s, status){
+  const set = (t, err) => { status.className = "status" + (err ? " err" : ""); status.textContent = t; };
+  const dl = await window.claude?.use?.("downloads");
+  if (!dl) return set("이 화면에서는 파일 저장을 쓸 수 없습니다. claude.ai에서 열어 주세요.", true);
+  set("파일을 만드는 중…");
+  try {
+    await loadScript(CDN+"jszip/3.10.1/jszip.min.js");
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
+    zip.folder("_rels").file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+    zip.folder("word").file("document.xml", sheetDocx(s));
+    const blob = await zip.generateAsync({type:"blob"});
+    await dl.save({filename:`${(s.name||"학생").replace(/[\\/:*?"<>|]/g,"")}_면접예상질문지.docx`, data: blob});
+    set("저장했습니다. 한글에서 바로 열립니다.");
+  } catch(e){
+    set(e?.code === "declined" ? "저장을 취소했습니다." : e?.code === "rate_limited" ? "잠시 후 다시 눌러 주세요." : "파일을 만들지 못했습니다.", e?.code !== "declined");
+  }
+}
+
 function viewSheet(s){
   const sh = s.sheet;
-  const bar = h("div",{style:"margin-bottom:16px"}, genBar(s));
+  const dlStatus = h("span",{class:"status"});
+  const bar = h("div",{style:"margin-bottom:16px"}, genBar(s),
+    s.sheet ? h("div",{class:"row",style:"margin-top:8px"},
+      h("button",{text:"한글·워드 파일로 저장 (.docx)",onclick:()=>exportDocx(s, dlStatus)}), dlStatus) : null);
   if (!sh) return h("div",null, bar, h("div",{class:"empty",text:"학생부를 근거로 진로, 한 줄 서사, 지뢰 항목, 영역별 예상질문 15~20개(3학년 비중 50%), 꼬리질문, 답변 뼈대를 만듭니다."}));
 
   let n = 0;
