@@ -266,7 +266,7 @@ const EXAMPLES = [
 ];
 
 /* ───────── 저장소 ───────── */
-let students = [], selId = null, tab = "info", col = null;
+let students = [], selId = null, tab = "info", col = null, aiReady = null;   // aiReady: null=확인 중
 const LS = "interview-room-v1";
 function lsGet(){ try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } }
 function lsSet(){ try { localStorage.setItem(LS, JSON.stringify(students.filter(s=>!s.example || s.dirty))); } catch {} }
@@ -290,6 +290,8 @@ async function initStore(){
     loaded = lsGet();
     $("#store").textContent = "이 브라우저에만 임시 저장됨";
   }
+  aiReady = !!(await window.claude?.use?.("sample").catch(()=>null));
+  if (!aiReady) $("#store").textContent += " · AI 기능은 claude.ai 앱에서만";
   students = loaded && loaded.length ? loaded : structuredClone(EXAMPLES);
   for (const s of students) if (!s.rec){                     // 이전 버전(통짜 학생부·3칸) → 학년 미상으로 옮김
     s.rec = emptyRec();
@@ -587,8 +589,9 @@ async function importFile(s, file){
     s.rec = r.rec; save(s); render();
     const n = (g,k) => recGet(s,g,k).length.toLocaleString();
     const parts = ["3","2","1"].filter(g => hasGrade(s,g)).map(g => `${GR_LABEL[g]} 세특 ${n(g,"setuk")}·창체 ${n(g,"chang")}·행발 ${n(g,"haeng")}자`);
-    setMsg(`불러옴 — ${parts.join(" / ")}${hasGrade(s,"0") ? " / 학년을 못 가린 내용이 있습니다('학년 미상' 확인)" : ""}. 예상질문지를 만드는 중입니다.`);
-    generateSheet(s);
+    const miss = hasGrade(s,"0") ? " / 학년을 못 가린 내용이 있습니다('학년 미상' 확인)" : "";
+    setMsg(`불러옴 — ${parts.join(" / ")}${miss}.` + (aiReady ? " 예상질문지를 만드는 중입니다." : ""));
+    if (aiReady) generateSheet(s);
   } catch(e){
     setMsg(e?.message || "파일을 읽지 못했습니다.", true);
   }
@@ -604,7 +607,7 @@ function viewImport(s){
     h("div",{class:"row"},
       h("button",{class:"primary",text:"나이스 학생부 파일 불러오기",onclick:()=>input.click()}), input,
       h("span",{class:"muted",text:"PDF · HWP · HWPX · 엑셀"})),
-    h("p",{class:"hint",text:"나이스 학생부 출력 화면에서 PDF나 한글 파일로 저장해 올리면, 학년별 세특·창체·행발로 나눠 정리하고 바로 예상질문지를 만듭니다. 파일은 이 브라우저 안에서만 읽고, 인적·학적사항·출결·성적표 숫자·매 쪽 머리글(학교명·성명)은 뺍니다. 이미 입력한 학생부는 덮어씁니다."}),
+    h("p",{class:"hint",text:"나이스 학생부 출력 화면에서 PDF나 한글 파일로 저장해 올리면, 학년별 세특·창체·행발로 나눠 정리합니다. 파일은 이 브라우저 안에서만 읽고, 인적·학적사항·출결·성적표 숫자·매 쪽 머리글(학교명·성명)은 뺍니다. 이미 입력한 학생부는 덮어씁니다."}),
     h("span",{class:"status"+(m?.err?" err":""),id:"imp-status",text:m?.t||""}),
     rawKeep[s.id] && h("details",{class:"raw"},
       h("summary",{text:"파일에서 뽑은 원문 그대로 보기 (분리가 이상할 때)"}),
@@ -738,7 +741,8 @@ function genBar(s){
   const g = gen[s.id] || {};
   const run = g.state === "run";
   return h("div",{class:"row",id:"gen-"+s.id},
-    h("button",{class:"primary",disabled:run,text: run ? "만드는 중…" : s.sheet && !s.example ? "예상질문지 다시 만들기" : "예상질문지 만들기",onclick:()=>generateSheet(s)}),
+    h("button",{class:"primary",disabled:run || aiReady === false,text: run ? "만드는 중…" : s.sheet && !s.example ? "예상질문지 다시 만들기" : "예상질문지 만들기",onclick:()=>generateSheet(s)}),
+    aiReady === false && h("span",{class:"status",text:"이 화면에서는 질문지를 만들 수 없습니다. claude.ai 앱 링크에서 열어 주세요."}),
     run && h("button",{text:"중단",onclick:()=>g.ctl?.abort()}),
     g.state === "done" && tab !== "sheet" && h("button",{text:"예상질문지 보기 →",onclick:()=>{ tab = "sheet"; render(); }}),
     h("span",{class:"status"+(g.state==="err"?" err":""),text:g.msg||""}));
@@ -1024,6 +1028,7 @@ function viewMock(s){
     }, 1000);
   }
 
+  if (aiReady === false) return h("div",{class:"note warn",text:"모의면접은 claude.ai 앱 링크에서만 됩니다. 이 화면에서는 학생부 정리, 반 현황표, 블라인드 점검, 질문지 보기와 파일 저장을 쓸 수 있습니다."});
   return h("div",{style:"display:grid;gap:12px"},
     !s.sheet && h("div",{class:"note",text:"예상질문지를 먼저 만들면 면접관이 지뢰 항목을 우선 파고듭니다. 질문지 없이도 학생부만으로 진행할 수 있습니다."}),
     h("div",{class:"chat",id:"chat"}, msgs.length ? msgs : h("div",{class:"empty",text:"면접관이 한 번에 한 문항씩 묻고, 답하면 꼬리질문을 던집니다. 새 질문 3개마다 잘한 점·고칠 점·블라인드 위반 여부를 피드백합니다."})),
