@@ -452,7 +452,16 @@ async function pdfText(buf){
   let out = "";
   for (let p = 1; p <= pdf.numPages; p++){
     const tc = await (await pdf.getPage(p)).getTextContent();
-    for (const it of tc.items) out += it.str + (it.hasEOL ? "\n" : " ");
+    let prevEnd = null, prevY = null;
+    for (const it of tc.items){
+      if (typeof it.str !== "string" || !it.transform) continue;
+      const x = it.transform[4], y = it.transform[5];
+      if (prevY !== null && Math.abs(y - prevY) > 2) out += "\n";        // 줄이 바뀌었다
+      else if (prevEnd !== null && x - prevEnd > 1.2) out += " ";        // 사이가 벌어졌다 = 진짜 띄어쓰기
+      out += it.str;
+      prevEnd = x + (it.width || 0); prevY = y;
+      if (it.hasEOL){ out += "\n"; prevEnd = prevY = null; }
+    }
     out += "\n";
   }
   return out;
@@ -530,6 +539,20 @@ const SECTIONS = [
 const HEADER_WORDS = /^(학\s*년|학\s*기|교\s*과|과\s*목|영\s*역|시\s*간|특\s*기\s*사\s*항|세\s*부\s*능\s*력|이\s*수\s*학\s*점|성\s*취\s*도|원\s*점\s*수|석\s*차|비\s*고|구\s*분)/;
 const LABEL = /^((?:자율[·ㆍ\s]*자치|자율|동아리|진로|봉사|안전)\s*활동|\([^)]{1,20}\)|[가-힣A-Za-zⅠ-Ⅹ·&\s]{1,16}\s*[:：])/;
 
+// "화 법 과 작 문"처럼 글자마다 떨어져 나온 줄을 되붙인다
+function unspace(l){
+  const fix = c => {
+    const t = c.split(" ").filter(Boolean);
+    if (t.length < 6) return c;
+    const head = /^[123]$/.test(t[0]) ? t.shift() : "";          // 표 첫 칸의 학년 숫자는 살린다
+    const body = t.filter(w => w.length === 1).length / t.length > 0.7 ? t.join("") : t.join(" ");
+    return (head ? head + " " : "") + body;
+  };
+  return l.split(/\s{2,}/).filter(Boolean).map(fix).join(" ");   // 넓게 벌어진 자리는 진짜 띄어쓰기
+}
+// 성적표·과목 구분 표의 머리글 조각
+const NOISE = /(표준편차|수강자수|석차등급|성취도|이수단위|이수학점|원점수|과목평균|분포비율|진로\s*선택\s*과목|공통\s*과목|일반\s*선택|융합\s*선택|체육\s*[·ㆍ]\s*예술)/;
+
 // 줄바꿈으로 잘린 문장을 다시 잇는다(문장 끝이 아니고 다음 줄이 새 항목 표시가 아니면)
 function mergeWrapped(arr){
   const out = [];
@@ -542,7 +565,7 @@ function mergeWrapped(arr){
 }
 
 function splitRecord(raw){
-  const lines = raw.replace(/\r/g,"").split("\n").map(l => l.replace(/[ \t ]+/g," ").trim()).filter(Boolean);
+  const lines = raw.replace(/\r/g,"").split("\n").map(l => unspace(l.replace(/[\t ]/g," ").trim()).replace(/ +/g," ").trim()).filter(Boolean);
   const freq = {}; for (const l of lines) freq[l] = (freq[l]||0) + 1;
   const buf = {}, all = [];
   let sec = null, g = "0", hits = 0;
@@ -553,8 +576,9 @@ function splitRecord(raw){
       const hit = SECTIONS.find(([,re]) => re.test(l));
       if (hit){ sec = hit[0]; g = "0"; if (sec !== "skip") hits++; continue; }
     }
-    let m = l.match(/^\[?\s*([123])\s*학\s*년\s*\]?$/);
-    if (m){ g = m[1]; continue; }
+    if (l.length < 80 && !/[.!?]$/.test(l) && NOISE.test(l)) continue;      // 성적표 머리글 조각
+    let m = l.match(/^\[?\s*([123])\s*학\s*년\s*\]?(.*)$/);
+    if (m && (!m[2].trim() || sec === "gyo")){ g = m[1]; l = m[2].trim(); if (!l) continue; }
     if (sec && sec !== "gyo"){                                        // 창체·행발 표: 첫 칸이 학년 숫자
       if (/^[123]$/.test(l)){ g = l; continue; }
       m = l.match(/^([123])\s+(?=[가-힣(])(.*)$/);
@@ -563,7 +587,7 @@ function splitRecord(raw){
     if (l.length < 40 && HEADER_WORDS.test(l)) continue;
     const ko = (l.match(/[가-힣]/g)||[]).length;
     if (ko < 2 || ko < (l.match(/\d/g)||[]).length) continue;          // 성적표 숫자 줄
-    l = l.replace(/^((?:자율[·ㆍ\s]*자치|자율|동아리|진로|봉사|안전)\s*활동)\s+\d+\s*/, "$1 ");   // 창체 표의 시간 칸 제거
+    l = l.replace(/^((?:자율[·ㆍ\s]*자치|자율|동아리|진로|봉사|안전)\s*활동)\s*\d{1,3}\s*/, "$1 ");   // 창체 표의 시간 칸 제거
     all.push(l);
     if (sec && sec !== "skip") (buf[g+"|"+sec] ||= []).push(l);
   }
