@@ -1105,7 +1105,109 @@ async function sendMock(s, text, ui){
   render();
 }
 
+/* ───────── 연습 모드: AI 없이 도는 모의면접 ─────────
+   질문지의 질문을 하나씩 던지고, 답변을 규칙으로 점검한다(길이·시간·근거·군말·블라인드). */
+const FILLER = /(음{2,}|어{2,}|그냥|약간|뭐랄까|좀)/g;
+const practiceQs = s => (s.sheet?.sections||[]).flatMap(sec => (sec.questions||[]).map(q => ({...q, area:sec.area})));
+function answerNotes(q, text, secs){
+  const n = [], len = text.trim().length;
+  if (len < 80) n.push(["warn", `${len}자로 짧습니다. 결론 → 근거 활동 → 배운 점 순서로 150자 안팎을 채워 보세요.`]);
+  else if (len > 320) n.push(["warn", `${len}자로 깁니다. 말하면 60초를 넘기니 근거 활동을 하나만 남기세요.`]);
+  else n.push(["ok", `${len}자, 말하면 40~60초로 알맞습니다.`]);
+  if (secs != null && secs > 90) n.push(["warn", `답변을 시작하기까지 ${secs}초 걸렸습니다. 실제 면접에서는 생각할 시간이 짧습니다.`]);
+  const hit = (q.keywords||[]).filter(k => k && text.includes(k));
+  if (hit.length) n.push(["ok", `학생부 활동(${hit.join(", ")})을 근거로 댔습니다.`]);
+  else n.push(["warn", `학생부 근거가 보이지 않습니다. ${(q.keywords||[]).filter(Boolean).slice(0,2).join(", ") || "해당 활동"}을(를) 직접 말하세요.`]);
+  const first = text.trim().split(/(?<=[.!?])\s/)[0] || "";
+  if (first.length > 70) n.push(["warn", "첫 문장이 깁니다. 결론을 한 문장으로 먼저 말하고 근거를 뒤에 붙이세요."]);
+  const f = (text.match(FILLER)||[]).length;
+  if (f >= 3) n.push(["warn", `군말이 ${f}번 나옵니다. 빼고 다시 말해 보세요.`]);
+  for (const b of blindCheck(text)) n.push(["blind", `블라인드 위반 — ${b.label} ‘${b.match}’`]);
+  return n;
+}
+function viewPractice(s){
+  const qs = practiceQs(s);
+  if (!qs.length) return h("div",{class:"note",text:"연습 모드는 예상질문지의 질문을 씁니다. 질문지 탭에서 먼저 만들어 주세요. 'AI 없이 만들기'로도 됩니다."});
+  const p = s.practice ||= {i:0, stage:"q", log:[]};
+  if (p.i >= qs.length) return h("div",{style:"display:grid;gap:12px"},
+    h("div",{class:"note",text:`질문 ${qs.length}개를 모두 마쳤습니다.`}),
+    practiceSummary(s, qs),
+    h("button",{class:"primary",text:"처음부터 다시",onclick:()=>{ s.practice = {i:0, stage:"q", log:[]}; save(s); render(); }}));
+
+  const q = qs[p.i], rec = p.log[p.i];
+  askedAt ||= Date.now();
+  const box = h("textarea",{id:"p-input",rows:4,placeholder:"학생이 말한 답을 적거나, 학생이 직접 입력하게 하세요."});
+  const cnt = h("span",{class:"muted",text:"0자"});
+  const flags = h("div",{class:"flags"});
+  box.oninput = () => {
+    cnt.textContent = box.value.length + "자";
+    flags.replaceChildren(...blindCheck(box.value).map(f => h("span",{class:"chip red",text:"블라인드: "+f.label+" ‘"+f.match+"’"})));
+  };
+  const submit = () => {
+    const t = box.value.trim(); if (!t) return;
+    const secs = askedAt ? Math.round((Date.now()-askedAt)/1000) : null;
+    p.log[p.i] = {q:q.q, a:t, secs, notes:answerNotes(q, t, secs)};
+    p.stage = "feedback"; askedAt = null; save(s); render();
+  };
+  const next = () => { p.i++; p.stage = "q"; askedAt = Date.now(); save(s); render(); };
+  clearInterval(viewMock._t);
+  if (p.stage === "q") viewMock._t = setInterval(() => {
+    const el = $("#m-timer"); if (!el){ clearInterval(viewMock._t); return; }
+    const sec = Math.round((Date.now() - askedAt)/1000);
+    el.textContent = `${sec}초`; el.classList.toggle("over", sec > 60);
+  }, 1000);
+
+  return h("div",{style:"display:grid;gap:12px"},
+    h("div",{class:"row"},
+      h("span",{class:"label",text:`${q.area} · ${p.i+1} / ${qs.length}`}),
+      h("span",{class:"spacer"}),
+      h("span",{class:"timer",id:"m-timer"})),
+    h("div",{class:"msg them",style:"max-width:none"}, q.q,
+      h("div",{class:"meta"}, h("q",{class:"quote",text:q.evidence||""}), srcTag(q.source))),
+
+    p.stage === "feedback" && rec ? [
+      h("div",{class:"msg me",style:"max-width:none"}, rec.a, h("div",{class:"meta",text:`${rec.a.length}자 · ${rec.secs ?? "-"}초`}),
+      ),
+      h("div",{class:"msg fb",style:"max-width:none"},
+        h("div",{class:"label",text:"점검"}),
+        h("ul",{style:"margin:6px 0 0;padding-left:18px"}, rec.notes.map(([t,m]) =>
+          h("li",null, h("span",{class:"chip "+(t==="ok"?"green":t==="blind"?"red":"amber"),text:t==="ok"?"좋음":t==="blind"?"위반":"고칠 점"}), " ", m))),
+        (q.tails||[]).length ? h("p",{style:"margin:10px 0 0"}, h("b",null,"꼬리질문 · "), q.tails[0]) : null),
+      h("div",{class:"row"},
+        h("button",{class:"primary",text: p.i+1 < qs.length ? "다음 질문 →" : "마치기",onclick:next}),
+        h("button",{text:"이 질문 다시",onclick:()=>{ p.stage="q"; p.log[p.i]=null; askedAt=Date.now(); save(s); render(); }}))
+    ] : [
+      h("label",{class:"f",for:"p-input"},"답변", box), flags,
+      h("div",{class:"row"}, h("button",{class:"primary",text:"답변 제출",onclick:submit}),
+        h("button",{text:"이 질문 건너뛰기",onclick:next}), h("span",{class:"spacer"}), cnt)
+    ],
+    h("p",{class:"hint",text:"AI 없이 도는 연습 모드입니다. 답변 길이, 걸린 시간, 학생부 근거를 댔는지, 군말, 블라인드 위반을 규칙으로 점검합니다."})
+  );
+}
+function practiceSummary(s, qs){
+  const done = (s.practice?.log||[]).filter(Boolean);
+  if (!done.length) return null;
+  const avg = Math.round(done.reduce((n,x)=>n+x.a.length,0)/done.length);
+  const blind = done.reduce((n,x)=>n+x.notes.filter(([t])=>t==="blind").length,0);
+  const weak = done.reduce((n,x)=>n+x.notes.filter(([t,m])=>t==="warn" && m.includes("근거")).length,0);
+  return h("div",{class:"note"},
+    h("div",{class:"label",text:"연습 결과"}),
+    h("ul",{style:"margin:6px 0 0;padding-left:18px"},
+      h("li",{text:`답변 ${done.length}개, 평균 ${avg}자`}),
+      h("li",{text:`학생부 근거가 빠진 답변 ${weak}개`}),
+      h("li",{text:`블라인드 위반 ${blind}건`})));
+}
+
 function viewMock(s){
+  const mode = s.mockMode || (aiReady ? "ai" : "rule");
+  const tabsRow = h("div",{class:"row",style:"margin-bottom:4px"},
+    h("button",{class: mode==="ai" ? "primary" : "", disabled: aiReady === false, text:"Claude 면접관",onclick:()=>{ s.mockMode="ai"; save(s); render(); }}),
+    h("button",{class: mode==="rule" ? "primary" : "", text:"연습 모드 (AI 없음)",onclick:()=>{ s.mockMode="rule"; askedAt=Date.now(); save(s); render(); }}),
+    aiReady === false && h("span",{class:"muted",text:"Claude 면접관은 claude.ai 앱 링크에서만 됩니다."}));
+  if (mode === "rule") return h("div",{style:"display:grid;gap:12px"}, tabsRow, viewPractice(s));
+  return h("div",{style:"display:grid;gap:12px"}, tabsRow, viewMockAI(s));
+}
+function viewMockAI(s){
   const chat = s.chat || [];
   const status = h("span",{class:"status",id:"m-status"});
   const timer = h("span",{class:"timer",id:"m-timer"});
@@ -1150,7 +1252,6 @@ function viewMock(s){
     }, 1000);
   }
 
-  if (aiReady === false) return h("div",{class:"note warn",text:"모의면접은 claude.ai 앱 링크에서만 됩니다. 이 화면에서는 학생부 정리, 반 현황표, 블라인드 점검, 질문지 보기와 파일 저장을 쓸 수 있습니다."});
   return h("div",{style:"display:grid;gap:12px"},
     !s.sheet && h("div",{class:"note",text:"예상질문지를 먼저 만들면 면접관이 지뢰 항목을 우선 파고듭니다. 질문지 없이도 학생부만으로 진행할 수 있습니다."}),
     h("div",{class:"chat",id:"chat"}, msgs.length ? msgs : h("div",{class:"empty",text:"면접관이 한 번에 한 문항씩 묻고, 답하면 꼬리질문을 던집니다. 새 질문 3개마다 잘한 점·고칠 점·블라인드 위반 여부를 피드백합니다."})),

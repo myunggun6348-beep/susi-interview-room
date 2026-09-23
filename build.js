@@ -15,3 +15,7 @@ ${body}
 </html>
 `);
 console.log("index.html 생성");
+
+// 동료 교사 공유용: 내용은 같고, 계정 저장소(db) 없이 배포하는 판. 자료는 각자 브라우저에만 남는다.
+fs.writeFileSync(__dirname + "/share.html", body);
+console.log("share.html 생성");
