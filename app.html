@@ -412,17 +412,17 @@ const recGet = (s,g,k) => (s.rec?.[g]?.[k] || "").trim();
 const hasGrade = (s,g) => REC.some(([k]) => recGet(s,g,k));
 
 // sample 입력 64KiB 제한 → 3학년 > 2학년 > 학년 미상 > 1학년 순으로 분량을 배정(학년 안에선 행발 > 창체 > 세특), 출력은 학년 순서
-function recordPlan(s, budget){
+function recordPlan(s, budget, only){
   const segs = [];
-  for (const g of ["1","2","3","0"]) for (const [k] of REC){ const t = recGet(s,g,k); if (t) segs.push({g,k,t}); }
+  for (const g of (only ? [only] : ["1","2","3","0"])) for (const [k] of REC){ const t = recGet(s,g,k); if (t) segs.push({g,k,t}); }
   const gp = {"3":0,"2":1,"0":2,"1":3}, kp = {haeng:0,chang:1,setuk:2};
   let left = budget;
   for (const sg of [...segs].sort((a,b) => (gp[a.g]*3+kp[a.k]) - (gp[b.g]*3+kp[b.k]))){ sg.cut = sg.t.slice(0, Math.max(left,0)); left -= sg.cut.length; }
   return segs;
 }
-function recordText(s, budget = 16000){
+function recordText(s, budget = 16000, only){
   let out = "", last = null;
-  for (const sg of recordPlan(s, budget)){
+  for (const sg of recordPlan(s, budget, only)){
     if (!sg.cut) continue;
     if (sg.g !== last){ out += `\n===== ${GR_LABEL[sg.g]}${sg.g === "3" ? " (가장 중요)" : ""} =====\n`; last = sg.g; }
     out += `■ ${REC_TITLE[sg.k]}\n${sg.cut}${sg.cut.length < sg.t.length ? "\n(분량 제한으로 이하 생략)" : ""}\n\n`;
@@ -603,7 +603,8 @@ async function importFile(s, file){
       : ["xlsx","xls"].includes(ext) ? await xlsText(buf)
       : ext === "txt" ? new TextDecoder().decode(buf)
       : (()=>{ throw new Error("PDF, HWP, HWPX, XLSX, XLS, TXT 파일만 불러올 수 있습니다."); })();
-    rawKeep[s.id] = raw;                                  // 분리가 이상할 때 확인용 — 저장하지 않고 이 화면에서만 들고 있다
+    rawKeep[s.id] = raw;
+    s.raw = raw.slice(0, 120000);              // 걸러내기 전 원문 — 화면에서 확인하고 필요하면 직접 옮겨 쓴다                                  // 분리가 이상할 때 확인용 — 저장하지 않고 이 화면에서만 들고 있다
     if ((raw.match(/[가-힣]/g)||[]).length < 50) throw new Error("글자를 찾지 못했습니다. 스캔한 이미지 PDF라면 나이스에서 다시 저장해 주세요.");
     const r = splitRecord(raw);
     s.example = false; editRec = false;
@@ -730,14 +731,21 @@ function viewInfo(s){
     editRec ? shown.map(g => yearEdit(s,g))
       : any ? shown.filter(g => hasGrade(s,g) || g !== "0").map(g => yearCard(s,g))
       : h("div",{class:"empty",text:"나이스 파일을 불러오거나 '직접 입력하기'로 학년별 세특·창체·행발을 넣어 주세요."}),
-    cut.length ? h("div",{class:"note warn",text:`분량이 많아 ${cut.join("·")} 기록 일부는 분석에서 빠집니다. 3학년 → 2학년 → 1학년 순으로 먼저 넣습니다.`}) : null,
+    (s.raw || rawKeep[s.id]) ? h("details",{class:"raw"},
+      h("summary",{text:"파일 원문 전체 보기 (걸러내기 전)"}),
+      h("p",{class:"hint",text:"성적·수상·독서·출결까지 파일에서 읽은 그대로입니다. 위 칸에 빠진 내용이 있으면 여기서 복사해 ‘직접 고치기’로 넣으세요. 면접 질문은 세특·창체·행발만 보고 만듭니다(수상·독서·어학은 대입 미반영이라 일부러 뺍니다)."}),
+      h("pre",{class:"raw-pre",text:(s.raw || rawKeep[s.id]).slice(0, 60000)})) : null,
+    cut.length ? h("div",{class:"note warn",text:`분량이 많아 한 번에 보낼 때는 ${cut.join("·")} 기록 일부가 빠집니다. 질문지 탭의 ‘전체 분석 (학년별로 나눠서)’을 쓰면 잘리지 않고 전부 반영됩니다.`}) : null,
     h("p",{class:"hint",text:"면접 유형을 모르면 대학 입학처 모집요강이나 선행학습영향평가보고서(전년도 면접 문항 공개)에서 확인하세요."}),
     h("div",{class:"row"}, genBar(s), h("span",{class:"spacer"}), del)
   );
 }
 
 /* ───────── 예상질문지 ───────── */
-function sheetPrompt(s){
+function sheetPrompt(s, grade){
+  const scope = grade ? `
+
+[이번 분석 범위] ${GR_LABEL[grade]} 기록만 본다. 이 학년 기록에서만 질문을 내고, 질문은 ${({"3":9,"2":6,"1":4,"0":4})[grade]}개 안팎으로 만든다. 이 호출에서는 mines와 sections만 채우고 career·narrative·closing·warnings는 빈 값("" 또는 [])으로 둔다.` : "";
   return `너는 고3 담임의 수시 면접 지도를 돕는 코치다. 아래 학생부만 근거로 학생의 진로를 파악하고 면접 예상질문지를 만든다.
 
 규칙
@@ -756,11 +764,13 @@ function sheetPrompt(s){
 JSON 하나만 출력한다. 형식:
 {"career":{"title":"...","field":"...","basis":[{"grade":"1학년","point":"..."}],"fit":{"level":"높음","note":"..."},"shift":""},"narrative":"...","warnings":["..."],"mines":[{"item":"기재 내용 요약","evidence":"원문 인용","source":"3학년 세특-...","questions":["...","..."]}],"sections":[{"area":"지원동기·전공 적합성","questions":[{"q":"...","evidence":"원문 인용","source":"3학년 ...","keywords":["","",""],"skeleton":"... → ... → ... → ...","tails":["...","..."]}]}],"closing":"..."}
 
+${scope}
+
 [학생 정보]
 지원: ${s.univ||"미입력"} ${s.dept||""} / 전형: ${s.track||"미입력"} / 면접 유형: ${s.itype||"서류 기반 확인 면접"} / 면접일: ${s.date||"미정"}
 
 [학생부 — 학년별]
-${recordText(s, 16000)}`;
+${recordText(s, grade ? 17000 : 16000, grade)}`;
 }
 
 /* ───────── AI 없이 만드는 질문지(규칙 기반) ─────────
@@ -874,6 +884,7 @@ function genBar(s){
   const run = g.state === "run";
   return h("div",{class:"row",id:"gen-"+s.id},
     h("button",{class:"primary",disabled:run || aiReady === false,text: run ? "만드는 중…" : "Claude로 만들기",onclick:()=>generateSheet(s)}),
+    h("button",{disabled:run || aiReady === false,text:"전체 분석 (학년별로 나눠서)",title:"학생부가 길어도 잘리지 않게 3학년·2학년·1학년을 따로 분석해 합칩니다. 시간과 사용량이 더 듭니다.",onclick:()=>generateSheetSplit(s)}),
     h("button",{text:"AI 없이 만들기",title:"학생부 문장에서 규칙으로 질문을 뽑습니다. 돈도 인터넷도 들지 않습니다.",onclick:()=>{
       const sheet = rulesSheet(s);
       if (!sheet){ gen[s.id] = {state:"err", msg:"학생부를 먼저 넣어 주세요."}; refreshGen(s); return; }
@@ -912,6 +923,58 @@ async function generateSheet(s){
       invalid_json:"결과 형식이 깨졌습니다. 다시 눌러 주세요.", prompt_too_large:"학생부가 너무 깁니다. 1학년 기록을 줄이고 다시 시도하세요.",
       refused:"이 입력으로는 작성하지 못했습니다. 학생부 내용을 확인해 주세요."
     })[e?.code] || "연결이 끊겼습니다. 다시 눌러 주세요.");
+  }
+}
+
+/* 학생부가 길면 한 번에 다 보낼 수 없다(한 번에 약 2만 자). 학년별로 나눠 부르고 합친다. */
+const AREA_ORDER = ["지원동기·전공 적합성","학업 역량(세특 심화)","전공 관련 탐구·동아리","공동체 역량·협업"];
+function finalPrompt(s, mines, byArea){
+  return `고3 학생의 면접 예상질문지를 학년별로 나눠 만들었다. 아래 요약만 보고 마무리 부분을 쓴다.
+
+- career: 이 학생의 진로를 한 줄로 딱 정한다. title(분야+역할, 20자 안팎), field(학문 분야), basis(학년별 근거 한 줄씩), fit({"level":"높음|보통|낮음","note":"한 줄"}), shift(진로가 바뀐 흔적이 있으면 한 줄, 없으면 "").
+- narrative: 1학년→3학년 관심 심화 서사 1~2문장. 3학년에서 도달한 지점을 분명히 쓴다.
+- closing: 마지막 한마디(1분) 뼈대. 진로와 이어지게.
+- warnings: 면접 준비에서 주의할 점(블라인드 위험, 학년 간 진로 전환 설명 필요 등). 없으면 [].
+JSON만 출력: {"career":{...},"narrative":"...","closing":"...","warnings":[]}
+
+[지원] ${s.univ||""} ${s.dept||""} / ${s.track||""} / ${s.itype||""}
+[지뢰 항목] ${mines.map(m => `${m.source} ${m.item}`).join(" / ") || "없음"}
+[영역별 질문] ${byArea.map(([a,qs]) => `${a}: ${qs.map(q=>q.q).slice(0,6).join(" | ")}`).join("\n")}`;
+}
+async function generateSheetSplit(s){
+  const g = gen[s.id] = {state:"run", msg:"학년별로 나눠 분석합니다…"};
+  const fail = msg => { g.state = "err"; g.msg = msg; refreshGen(s); };
+  refreshGen(s);
+  const grades = ["3","2","1","0"].filter(x => hasGrade(s,x));
+  if (!grades.length) return fail("학생부를 먼저 넣어 주세요.");
+  const sample = await window.claude?.use?.("sample");
+  if (!sample) return fail("이 화면에서는 AI 기능을 쓸 수 없습니다. claude.ai에서 열어 주세요.");
+  g.ctl = new AbortController();
+  const total = grades.length + 1;
+  try {
+    const areas = new Map(), mines = [];
+    let step = 0;
+    for (const gr of grades){
+      step++;
+      const tick = extra => { g.msg = `${GR_LABEL[gr]} 기록 분석 중 (${step}/${total})${extra||""}`; refreshGen(s); };
+      tick();
+      const r = await sample.json(sheetPrompt(s, gr), {signal:g.ctl.signal, cache:false,
+        onText:({text}) => tick(` · ${text.length.toLocaleString()}자`)});
+      for (const m of r.mines||[]) mines.push({...m, ready:"미확인"});
+      for (const sec of r.sections||[]) areas.set(sec.area, (areas.get(sec.area)||[]).concat(sec.questions||[]));
+    }
+    const byArea = [...areas].sort((a,b) => AREA_ORDER.indexOf(a[0]) - AREA_ORDER.indexOf(b[0]));
+    g.msg = `진로와 서사를 정리하는 중 (${total}/${total})`; refreshGen(s);
+    const fin = await sample.json(finalPrompt(s, mines, byArea), {signal:g.ctl.signal, cache:false});
+    s.sheet = {engine:"claude-split", career:fin.career, narrative:fin.narrative, closing:fin.closing,
+      warnings:(fin.warnings||[]).concat("학생부를 학년별로 나눠 분석해 합친 질문지입니다. 잘린 기록 없이 전부 반영했습니다."),
+      mines, sections: byArea.map(([area,questions]) => ({area, questions}))};
+    s.example = false; s.check = [false,false,false,false];
+    g.state = "done"; g.msg = `전부 반영해 만들었습니다. 질문 ${byArea.reduce((n,x)=>n+x[1].length,0)}개.`;
+    save(s); render();
+  } catch(e){
+    fail(e?.code === "cancelled" ? "중단했습니다." : e?.code === "rate_limited" ? "사용량 한도에 걸렸습니다. 잠시 후 다시 눌러 주세요."
+      : e?.code === "invalid_json" ? "결과 형식이 깨졌습니다. 다시 눌러 주세요." : "연결이 끊겼습니다. 다시 눌러 주세요.");
   }
 }
 
