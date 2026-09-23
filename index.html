@@ -128,6 +128,19 @@ textarea{resize:vertical;line-height:1.6}
 .empty{padding:28px 18px;color:var(--ink-2);text-align:center}
 mark{background:var(--mine-soft);color:var(--mine);border-radius:3px;padding:0 2px}
 .result li{margin-bottom:4px}
+/* 한글은 낱말 단위로 줄을 바꾼다 */
+h1,h2,h3,.career-title,.year-t,.mine-h .t,.qa .q,.narr,.item-k{word-break:keep-all}
+@media (max-width:560px){
+  .career-title{font-size:21px}
+  .board-tbl thead{display:none}                       /* 좁은 화면에서는 표 대신 줄 단위로 */
+  .board-tbl tr{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:2px 10px;align-items:center;padding:10px}
+  .board-tbl td{border:0;padding:0}
+  .board-tbl td:nth-child(1){grid-column:1;grid-row:1}
+  .board-tbl td:nth-child(2){grid-column:2;grid-row:1 / span 2}
+  .board-tbl td:nth-child(3){grid-column:3;grid-row:1;text-align:right}
+  .board-tbl td:nth-child(4){grid-column:3;grid-row:2;text-align:right}
+  .board-tbl tr{border-bottom:1px solid var(--line-2)}
+}
 /* 학년별 학생부 */
 .sec-h{font:700 17px/1.3 var(--f-disp);margin:0}
 .year{border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0}
@@ -181,7 +194,7 @@ details.year[open] > summary::before{content:"▾"}
         <button id="add" class="primary">+ 학생 추가</button>
       </div>
       <div class="tbl-wrap">
-        <table>
+        <table class="board-tbl">
           <thead><tr><th>순위</th><th>학생 · 지원</th><th>면접일</th><th>지뢰</th></tr></thead>
           <tbody id="board"></tbody>
         </table>
