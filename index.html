@@ -91,9 +91,16 @@ textarea{resize:vertical;line-height:1.6}
 .sheet h3{font:700 18px/1.35 var(--f-disp);margin:26px 0 10px;text-wrap:balance}
 .sheet h3:first-child{margin-top:0}
 .narr{font:700 17px/1.6 var(--f-disp);padding:12px 0 12px 14px;border-left:3px solid var(--accent);margin:0}
-.mine-tbl td:first-child{min-width:180px}
-.mine-tbl .ev{font-size:12.5px;color:var(--ink-2);margin-top:4px}
-.mine-tbl ol{margin:0;padding-left:18px}
+.mines{display:grid;gap:10px}
+.mine{border:1px solid var(--line);border-left:3px solid var(--mine);border-radius:8px;padding:12px 14px;display:grid;gap:8px}
+.mine-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mine-n{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;border-radius:50%;background:var(--mine-soft);color:var(--mine);font:600 12px var(--f-mono)}
+.mine-h .t{font-weight:600;flex:1;min-width:180px;line-height:1.45}
+.mine .ready{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);font-weight:600;width:auto}
+.mine select{width:auto;padding:4px 8px;font-size:13px}
+.mine-ev{font-size:13px;color:var(--ink-2);line-height:1.6}
+.mine-q{margin:0;padding-left:20px;display:grid;gap:5px;font-size:14.5px;line-height:1.65}
+.mine-q li{max-width:64ch}
 .qa{border-top:1px solid var(--line-2);padding:16px 0}
 .qa .q{font-weight:600;font-size:15.5px;display:flex;gap:10px;line-height:1.5}
 .qa .qn{font:500 13px var(--f-mono);color:var(--accent);padding-top:2px;flex:none;width:30px}
@@ -164,7 +171,7 @@ details.year[open] > summary::before{content:"▾"}
       <h1>수시 면접 준비실</h1>
       <div class="sub">학생부 근거 예상질문 · 지뢰 항목 · 모의면접 · 블라인드 점검</div>
     </div>
-    <div class="store" id="store">저장소 확인 중…</div>
+    <div><div class="store" id="store">저장소 확인 중…</div></div>
   </header>
 
   <div class="layout">
@@ -274,7 +281,7 @@ const EXAMPLES = [
 ];
 
 /* ───────── 저장소 ───────── */
-let students = [], selId = null, tab = "info", col = null, aiReady = null;   // aiReady: null=확인 중
+let students = [], selId = null, tab = "info", col = null, aiReady = null, diag = null;   // aiReady: null=확인 중
 const LS = "interview-room-v1";
 function lsGet(){ try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } }
 function lsSet(){ try { localStorage.setItem(LS, JSON.stringify(students.filter(s=>!s.example || s.dirty))); } catch {} }
@@ -298,8 +305,14 @@ async function initStore(){
     loaded = lsGet();
     $("#store").textContent = "이 브라우저에만 임시 저장됨";
   }
-  aiReady = !!(await window.claude?.use?.("sample").catch(()=>null));
+  const probe = async n => { try { return await window.claude?.use?.(n) ? "됨" : "안 됨(null)"; } catch(e){ return "오류 " + (e?.code || e?.message || ""); } };
+  aiReady = (await probe("sample")) === "됨";
   if (!aiReady) $("#store").textContent += " · AI 기능은 claude.ai 앱에서만";
+  diag = {주소:location.host + location.pathname, "window.claude": window.claude ? "있음" : "없음",
+    sample: await probe("sample"), db: await probe("db"), user: await probe("user"), downloads: await probe("downloads")};
+  $("#store").after(h("details",{class:"raw",style:"margin-top:4px"},
+    h("summary",{text:"진단"}),
+    h("pre",{class:"raw-pre",text:Object.entries(diag).map(([k,v]) => `${k}: ${v}`).join("\n")})));
   students = loaded && loaded.length ? loaded : structuredClone(EXAMPLES);
   for (const s of students) if (!s.rec){                     // 이전 버전(통짜 학생부·3칸) → 학년 미상으로 옮김
     s.rec = emptyRec();
@@ -1114,14 +1127,15 @@ function viewSheet(s){
     h("p",{class:"narr",text:sh.narrative||""}),
 
     h("h3",null,`반드시 준비할 지뢰 항목 (${(sh.mines||[]).length}개)`),
-    h("div",{class:"tbl-wrap"}, h("table",{class:"mine-tbl"},
-      h("thead",null,h("tr",null,h("th",null,"학생부 기재 내용"),h("th",null,"예상 질문"),h("th",null,"준비 수준"))),
-      h("tbody",null,(sh.mines||[]).map(m => h("tr",{style:"cursor:default"},
-        h("td",null, h("div",{style:"font-weight:600",text:m.item}), h("div",{class:"ev"}, h("q",{class:"quote",text:m.evidence||""}), srcTag(m.source), quoteTag(checkQuote(hay, m.evidence)))),
-        h("td",null, h("ol",null,(m.questions||[]).map(q=>h("li",{text:q})))),
-        h("td",null, h("select",{"aria-label":"준비 수준",onchange:e=>{m.ready=e.target.value; save(s);}},
-          ["미확인","연습 중","설명 가능"].map(o=>h("option",{value:o,text:o,selected:(m.ready||"미확인")===o}))))
-      ))))),
+    h("div",{class:"mines"}, (sh.mines||[]).map((m,i) => h("div",{class:"mine"},
+      h("div",{class:"mine-h"},
+        h("span",{class:"mine-n",text:i+1}),
+        h("span",{class:"t",text:m.item}),
+        h("label",{class:"ready"}, "준비 ",
+          h("select",{"aria-label":"준비 수준",onchange:e=>{ m.ready = e.target.value; save(s); }},
+            ["미확인","연습 중","설명 가능"].map(o => h("option",{value:o,text:o,selected:(m.ready||"미확인")===o}))))),
+      h("div",{class:"mine-ev"}, h("q",{class:"quote",text:m.evidence||""}), srcTag(m.source), quoteTag(checkQuote(hay, m.evidence))),
+      h("ol",{class:"mine-q"}, (m.questions||[]).map(q => h("li",{text:q})))))),
 
     h("h3",null,"영역별 예상질문"),
     h("p",{class:"dist",text:`질문 출처 · 3학년 ${dist["3"]} · 2학년 ${dist["2"]} · 1학년 ${dist["1"]}`}),
