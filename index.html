@@ -552,6 +552,8 @@ function unspace(l){
 }
 // 성적표·과목 구분 표의 머리글 조각
 const NOISE = /(표준편차|수강자수|석차등급|성취도|이수단위|이수학점|원점수|과목평균|분포비율|진로\s*선택\s*과목|공통\s*과목|일반\s*선택|융합\s*선택|체육\s*[·ㆍ]\s*예술)/;
+// 성적표 한 줄: 등급 글자(A~E·P)가 홀로 있거나, 원점수/과목평균 꼴이거나, 교과명이 빗금으로 이어진다
+const GRADE_ROW = /(^|\s)[A-EP](\s|$)|\d+\s*\/\s*\d+\s*\(|[가-힣]+\/[가-힣]+\//;
 
 // 줄바꿈으로 잘린 문장을 다시 잇는다(문장 끝이 아니고 다음 줄이 새 항목 표시가 아니면)
 function mergeWrapped(arr){
@@ -577,6 +579,7 @@ function splitRecord(raw){
       if (hit){ sec = hit[0]; g = "0"; if (sec !== "skip") hits++; continue; }
     }
     if (l.length < 80 && !/[.!?]$/.test(l) && NOISE.test(l)) continue;      // 성적표 머리글 조각
+    if (sec === "gyo" && !/[.!?]$/.test(l) && GRADE_ROW.test(l)) continue;  // 성적표 본문 줄(세특 문장은 마침표로 끝난다)
     let m = l.match(/^\[?\s*([123])\s*학\s*년\s*\]?(.*)$/);
     if (m && (!m[2].trim() || sec === "gyo")){ g = m[1]; l = m[2].trim(); if (!l) continue; }
     if (sec && sec !== "gyo"){                                        // 창체·행발 표: 첫 칸이 학년 숫자
