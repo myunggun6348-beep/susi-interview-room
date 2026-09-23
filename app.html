@@ -736,13 +736,125 @@ JSON 하나만 출력한다. 형식:
 ${recordText(s, 16000)}`;
 }
 
+/* ───────── AI 없이 만드는 질문지(규칙 기반) ─────────
+   학생부 문장을 그대로 근거로 삼아 정해진 틀에 끼워 질문을 만든다.
+   판단은 없으므로 지뢰 항목·진로는 표현으로만 추린다. */
+const AREA_SHORT = {setuk:"세특", chang:"창체", haeng:"행발"};
+const sentences = t => String(t||"").split(/(?<=[.!?])\s+/).map(x => x.trim()).filter(x => x.length > 12);
+const short = (t, n=40) => t.length > n ? t.slice(0,n).replace(/[\s,·]+$/,"") + "…" : t;
+const TERM = /[A-Z][A-Za-z0-9]{2,}(?:-[A-Za-z0-9]+)?|[가-힣A-Za-z]{2,12}(?:[·-][가-힣A-Za-z]{2,12})?\s*(?:법칙|방정식|모델|이론|기법|공식|효과|가설|메커니즘|기작|알고리즘|상수|계수|회로|구조|지수|제어|소자)/g;
+const KW_STOP = /^(그리고|하지만|그래서|통해|대해|위해|이를|다양|자신|활동|내용|과정|모습|자료|결과|경험|생각|수업|시간|친구|모둠|학생|발표|이해|관심|바탕|중심|특히|매우|스스로)/;
+function keywords(sent){
+  const ws = sent.replace(/[^가-힣A-Za-z0-9\s·-]/g," ").split(/\s+/)
+    .map(w => w.replace(/(으로서|에서는|에게서|이라는|라는|에서|에게|으로|하며|하고|하여|을|를|이|가|은|는|에|와|과|의|도|만|까지|부터|한|할|함|적|들)$/,""))
+    .map(w => w.length >= 3 ? w.replace(/(해|하|되|된|며)$/,"") : w)
+    .filter(w => w.length >= 2 && !KW_STOP.test(w));
+  return [...new Set(ws)].sort((a,b) => b.length - a.length).slice(0,3);
+}
+const TAILS = [
+  "그 활동은 얼마 동안 했고, 본인이 직접 맡은 부분은 어디인가요?",
+  "방금 말한 개념을 면접관이 처음 듣는다고 생각하고 한 문장으로 정의해 보세요.",
+  "계획대로 되지 않은 부분은 무엇이었고, 어떻게 대응했나요?",
+  "대학에 와서 이 경험을 어떻게 이어 가고 싶은가요?",
+];
+
+function rulesSheet(s){
+  const dept = s.dept || "지원 학과";
+  const pool = [], seen = new Set();
+  for (const g of ["3","2","1","0"]) for (const [k] of REC)
+    for (const it of parseItems(k, recGet(s,g,k)))
+      for (const sent of sentences(it.body)){
+        if (seen.has(sent)) continue;
+        seen.add(sent);
+        pool.push({g, k, label: it.label || "", sent, area: (it.label||"").replace("활동","")});
+      }
+  if (!pool.length) return null;
+  const gw = {"3":0,"2":1,"0":2,"1":3};
+  const rank = (a,b) => gw[a.g] - gw[b.g] || b.sent.length - a.sent.length;
+  const src = p => `${GR_LABEL[p.g]} ${AREA_SHORT[p.k]}${p.label ? "-" + p.label : ""}`;
+  const pick = (f, n) => pool.filter(f).sort(rank).slice(0, n);
+  const isJinro = p => p.k === "chang" && /진로/.test(p.label);
+  const isDong  = p => p.k === "chang" && /동아리/.test(p.label);
+
+  // 지뢰 항목: 전문 용어처럼 보이는 표현이 든 문장
+  const mines = [];
+  for (const p of [...pool].sort(rank)){
+    const terms = [...new Set((p.sent.match(TERM)||[]).map(t => t.trim())
+      .filter(t => t.length >= 3 && !/(을|를|이|가|은|는|에|의|도)s/.test(t)))];   // 조사가 낀 건 용어가 아니다
+    if (!terms.length || mines.length >= 6) continue;
+    if (mines.some(m => m.item === terms[0])) continue;
+    mines.push({item:terms[0], evidence:p.sent, source:src(p), ready:"미확인",
+      questions:[
+        `${terms[0]}가(이) 무엇인지 면접관이 처음 듣는다고 생각하고 1분 안에 설명해 보세요.`,
+        "그 내용을 알아보려고 어떤 자료를 봤고, 어디서 막혔나요?",
+        ...(p.k === "chang" ? ["공동 활동이었다면 본인이 실제로 맡은 부분은 무엇인가요?"] : [])
+      ]});
+  }
+
+  let tailN = 0;
+  const Q = (q, p, extra={}) => ({
+    q, evidence:p.sent, source:src(p), keywords:keywords(p.sent),
+    skeleton:`결론 한 문장 → ${keywords(p.sent)[0] || "해당 활동"} 경험 → 배운 점·달라진 점 → ${dept} 연결`,
+    tails: extra.tails ?? (tailN < 6 ? (tailN++, [TAILS[tailN % 4], TAILS[(tailN+2) % 4]]) : []),
+  });
+
+  const jinro = pick(isJinro, 4), setuk = pick(p => p.k === "setuk", 7);
+  const dong = pick(isDong, 4), gong = pick(p => p.k === "haeng" || (p.k === "chang" && /자율/.test(p.label)), 3);
+  const sections = [
+    {area:"지원동기·전공 적합성", questions:[
+      jinro[0] && Q(`${dept}에 지원하게 된 계기를 말해 보세요.`, jinro[0]),
+      jinro[1] && Q(`진로활동에 적힌 이 활동이 ${dept} 지원으로 이어진 과정을 설명해 보세요.`, jinro[1]),
+      jinro[2] && Q("고등학교 3년 동안 관심이 어떻게 깊어졌는지 순서대로 말해 보세요.", jinro[2]),
+      (jinro[3] || setuk[0]) && Q(`${dept}에 와서 가장 먼저 공부하고 싶은 것은 무엇인가요?`, jinro[3] || setuk[0]),
+    ].filter(Boolean)},
+    {area:"학업 역량(세특 심화)", questions: setuk.map((p,i) => Q(
+      [`${p.label || "이 과목"} 시간에 한 이 활동에 어떻게 접근했고, 무엇을 알게 되었나요?`,
+       "이 탐구에서 가장 어려웠던 부분은 무엇이었나요?",
+       "이 내용을 친구에게 설명한다면 어떻게 설명하겠습니까?",
+       "여기서 더 알아보고 싶어진 것은 무엇인가요?"][i % 4], p))},
+    {area:"전공 관련 탐구·동아리", questions: dong.map((p,i) => Q(
+      [`동아리에서 한 이 활동에서 본인이 맡은 역할은 무엇이었나요?`,
+       "이 활동의 결과를 어떻게 확인했나요?",
+       "함께한 친구들과 의견이 갈린 적이 있나요?",
+       "이 활동이 진로를 정하는 데 어떤 영향을 주었나요?"][i % 4], p))},
+    {area:"공동체 역량·협업", questions: gong.map((p,i) => Q(
+      ["여기에 적힌 모습이 드러난 구체적인 상황을 하나 말해 보세요.",
+       "그때 어떤 어려움이 있었고 어떻게 풀었나요?",
+       "함께한 친구들은 본인을 어떤 사람으로 볼 것 같나요?"][i % 3], p, {tails:[]}))},
+  ].filter(x => x.questions.length);
+
+  // 진로: 3학년 표현에 가중치를 두고 자주 나온 낱말을 모은다(판단이 아니라 빈도)
+  const freq = {};
+  for (const p of pool) if (p.k !== "haeng") for (const w of keywords(p.sent)) freq[w] = (freq[w]||0) + (p.g === "3" ? 2 : 1);
+  const top = Object.entries(freq).sort((a,b) => b[1]-a[1]).slice(0,3).map(x => x[0]);
+  const firstOf = g => pool.filter(p => p.g === g && p.k !== "haeng").sort(rank)[0];
+  const basis = ["1","2","3"].map(g => { const p = firstOf(g); return p && {grade:GR_LABEL[g], point:short(p.sent, 50)}; }).filter(Boolean);
+
+  return {
+    engine:"rules",
+    career:{title: top.length ? `${top.join(" · ")} 관련` : (s.dept || ""), field: s.dept || "",
+      basis, fit:{level:"", note:"학생부에 자주 나온 표현을 센 결과입니다. 진로 판단은 선생님이 확인해 주세요."}, shift:""},
+    narrative: ["1","2","3"].map(g => { const p = firstOf(g); return p && `${GR_LABEL[g]} ${short(p.sent, 45)}`; }).filter(Boolean).join(" → "),
+    warnings:["AI 없이 학생부 문장에서 규칙으로 만든 질문지입니다. 근거 문장은 모두 원문 그대로지만, 진로와 답변 뼈대는 일반적인 틀입니다. 지뢰 항목도 용어처럼 보이는 표현만 골랐습니다. 더 정확한 질문지는 claude.ai 앱에서 만드세요."],
+    mines, sections,
+    closing:`${dept}에서 하고 싶은 공부 한 가지와, 학생부에서 가장 자신 있는 활동 하나를 묶어 한 문장으로 준비하세요.`,
+  };
+}
+
 const gen = {};
 function genBar(s){
   const g = gen[s.id] || {};
   const run = g.state === "run";
   return h("div",{class:"row",id:"gen-"+s.id},
-    h("button",{class:"primary",disabled:run || aiReady === false,text: run ? "만드는 중…" : s.sheet && !s.example ? "예상질문지 다시 만들기" : "예상질문지 만들기",onclick:()=>generateSheet(s)}),
-    aiReady === false && h("span",{class:"status",text:"이 화면에서는 질문지를 만들 수 없습니다. claude.ai 앱 링크에서 열어 주세요."}),
+    h("button",{class:"primary",disabled:run || aiReady === false,text: run ? "만드는 중…" : "Claude로 만들기",onclick:()=>generateSheet(s)}),
+    h("button",{text:"AI 없이 만들기",title:"학생부 문장에서 규칙으로 질문을 뽑습니다. 돈도 인터넷도 들지 않습니다.",onclick:()=>{
+      const sheet = rulesSheet(s);
+      if (!sheet){ gen[s.id] = {state:"err", msg:"학생부를 먼저 넣어 주세요."}; refreshGen(s); return; }
+      s.sheet = sheet; s.example = false; s.check = [false,false,false,false];
+      gen[s.id] = {state:"done", msg:"규칙으로 만들었습니다."};
+      save(s); tab = "sheet"; render();
+    }}),
+    aiReady === false && h("span",{class:"status",text:"Claude로 만들려면 claude.ai 앱 링크에서 열어 주세요. 여기서는 ‘AI 없이 만들기’를 쓸 수 있습니다."}),
     run && h("button",{text:"중단",onclick:()=>g.ctl?.abort()}),
     g.state === "done" && tab !== "sheet" && h("button",{text:"예상질문지 보기 →",onclick:()=>{ tab = "sheet"; render(); }}),
     h("span",{class:"status"+(g.state==="err"?" err":""),text:g.msg||""}));
@@ -875,7 +987,7 @@ function viewSheet(s){
   const bar = h("div",{style:"margin-bottom:16px"}, genBar(s),
     s.sheet ? h("div",{class:"row",style:"margin-top:8px"},
       h("button",{text:"한글·워드 파일로 저장 (.docx)",onclick:()=>exportDocx(s, dlStatus)}), dlStatus) : null);
-  if (!sh) return h("div",null, bar, h("div",{class:"empty",text:"학생부를 근거로 진로, 한 줄 서사, 지뢰 항목, 영역별 예상질문 15~20개(3학년 비중 50%), 꼬리질문, 답변 뼈대를 만듭니다."}));
+  if (!sh) return h("div",null, bar, h("div",{class:"empty",text:"만드는 길이 두 가지입니다. ‘Claude로 만들기’는 학생부를 읽고 지뢰 항목과 진로까지 판단합니다(claude.ai 앱에서만, 추가 요금 없음). ‘AI 없이 만들기’는 학생부 문장을 그대로 근거로 삼아 규칙으로 질문을 뽑습니다(어디서나, 인터넷도 필요 없음)."}));
 
   let n = 0;
   const flags = blindCheck(JSON.stringify(sh));
@@ -885,7 +997,9 @@ function viewSheet(s){
   const vc = {ok:0, part:0, miss:0, short:0}; for (const v of evs) vc[v]++;
   const dist = {"3":0,"2":0,"1":0}; for (const q of qs){ const g = srcGrade(q.source); if (g) dist[g]++; }
   return h("div",{class:"sheet"}, bar,
-    h("div",{class:"muted",style:"margin-bottom:14px",text:`${s.univ||""} ${s.dept||""} · ${s.track||""} · 면접일 ${s.date||"미정"} · ${s.itype||""}`}),
+    h("div",{class:"row",style:"margin-bottom:14px"},
+      h("span",{class:"muted",text:`${s.univ||""} ${s.dept||""} · ${s.track||""} · 면접일 ${s.date||"미정"} · ${s.itype||""}`}),
+      h("span",{class:"chip "+(sh.engine === "rules" ? "gray" : "acc"),text: sh.engine === "rules" ? "규칙으로 만듦 (AI 없음)" : "Claude가 만듦"})),
 
     h("div",{class:"note"+(vc.miss ? " warn" : ""),style:"margin-bottom:14px"},
       h("span",{class:"label",text:"근거 인용 대조"}), " ",
