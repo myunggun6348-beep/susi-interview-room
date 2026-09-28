@@ -166,6 +166,11 @@ details.year[open] > summary::before{content:"▾"}
 .raw > summary{cursor:pointer;font-size:13px;color:var(--accent)}
 .raw-pre{max-height:320px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12.5px/1.6 var(--f-mono);white-space:pre-wrap;word-break:break-all;user-select:text}
 .chip.acc{background:var(--accent-soft);color:var(--accent)}
+/* 지원(수시 6장) 고르기 */
+.appbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:12px 16px 0}
+.app-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;font-size:13px;border-radius:99px}
+.app-chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:600}
+.app-chip.add{border-style:dashed;color:var(--ink-2)}
 /* 진로 */
 .career{background:var(--accent-soft);border-radius:10px;padding:14px 18px;margin:14px 16px 0;display:grid;gap:6px}
 .career.empty-career{background:var(--ground);border:1px dashed var(--line)}
@@ -294,7 +299,7 @@ const EXAMPLES = [
 ];
 
 /* ───────── 저장소 ───────── */
-let students = [], selId = null, tab = "info", col = null, aiReady = null, diag = null;   // aiReady: null=확인 중
+let students = [], selId = null, selApp = null, tab = "info", col = null, aiReady = null, diag = null;   // aiReady: null=확인 중
 const LS = "interview-room-v1";
 function lsGet(){ try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } }
 function lsSet(){ try { localStorage.setItem(LS, JSON.stringify(students.filter(s=>!s.example || s.dirty))); } catch {} }
@@ -327,6 +332,12 @@ async function initStore(){
     h("summary",{text:"진단"}),
     h("pre",{class:"raw-pre",text:Object.entries(diag).map(([k,v]) => `${k}: ${v}`).join("\n")})));
   students = loaded && loaded.length ? loaded : structuredClone(EXAMPLES);
+  for (const s of students){                                  // 지원 하나만 쓰던 판 → 지원 목록으로
+    if (!s.apps){
+      s.apps = [newApp({univ:s.univ, dept:s.dept, track:s.track, itype:s.itype, date:s.date,
+        sheet:s.sheet, chat:s.chat || [], practice:s.practice, check:s.check || [false,false,false,false]})];
+    }
+  }
   for (const s of students) if (!s.rec){                     // 이전 버전(통짜 학생부·3칸) → 학년 미상으로 옮김
     s.rec = emptyRec();
     s.rec["0"] = {setuk:s.setuk || s.record || "", chang:s.chang || "", haeng:s.haeng || ""};
@@ -336,7 +347,8 @@ async function initStore(){
 }
 
 const timers = {}, chains = {};
-function save(s){
+function save(s0){
+  const s = raw(s0);
   s.dirty = true; s.updatedAt = Date.now();
   lsSet();
   if (!col) return;
@@ -348,11 +360,12 @@ function save(s){
       .catch(e => { $("#store").textContent = e?.code === "quota_exceeded" ? "저장 공간이 가득 찼습니다. 끝난 학생을 삭제해 주세요." : "저장 실패 — 잠시 후 다시 수정하면 재시도합니다."; });
   }, 700);
 }
-async function removeStudent(s){
+async function removeStudent(s0){
+  const s = raw(s0);
   students = students.filter(x => x !== s);
   lsSet();
   if (col && !s.example) { try { await col.doc(s.id).delete(); } catch {} }
-  selId = students[0]?.id; render();
+  selId = students[0]?.id; selApp = null; render();
 }
 
 /* ───────── 계산 ───────── */
@@ -361,11 +374,26 @@ function dday(date){
   const t = new Date(); t.setHours(0,0,0,0);
   return Math.round((new Date(date + "T00:00:00") - t) / 86400000);
 }
-const mineCount = s => s.sheet?.mines?.length ?? null;
+/* 한 학생이 수시 여러 장을 쓴다. 학생부는 학생 한 벌, 대학·전형·면접일과 질문지·모의면접은 지원마다 따로.
+   화면 코드는 예전처럼 s.univ / s.sheet 로 읽고 쓰되, view()가 그것을 '지금 고른 지원'으로 돌린다. */
+const APP_FIELDS = new Set(["univ","dept","track","itype","date","sheet","chat","practice","check","mockMode"]);
+const newApp = (o = {}) => ({id:"a"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+  univ:"", dept:"", track:"학생부종합", itype:"서류 기반 확인 면접", date:"", sheet:null, chat:[], practice:null, check:[false,false,false,false], ...o});
+const apps = s => ((s._raw || s).apps ||= [newApp()]);
+const view = (s, a) => new Proxy(s, {
+  get: (t,k) => k === "_raw" ? t : k === "_app" ? a : APP_FIELDS.has(k) ? a[k] : t[k],
+  set: (t,k,v) => { (APP_FIELDS.has(k) ? a : t)[k] = v; return true; },
+});
+const raw = s => s?._raw || s;
+const gkey = s => raw(s).id + "|" + (s._app?.id || "");
+const pairs = () => students.flatMap(s => apps(s).map(a => ({s, a})));
+const appLabel = a => [a.univ, a.dept].filter(Boolean).join(" ") || "지원 대학 미입력";
+
+const mineCount = a => a.sheet?.mines?.length ?? null;
 function ranked(){
-  const act = students.filter(s => dday(s.date) != null && dday(s.date) >= 0);
-  act.sort((a,b) => dday(a.date) - dday(b.date) || (mineCount(b)??-1) - (mineCount(a)??-1));
-  const r = new Map(); act.forEach((s,i) => r.set(s.id, i+1)); return r;
+  const act = pairs().filter(p => dday(p.a.date) != null && dday(p.a.date) >= 0);
+  act.sort((x,y) => dday(x.a.date) - dday(y.a.date) || (mineCount(y.a)??-1) - (mineCount(x.a)??-1));
+  const r = new Map(); act.forEach((p,i) => r.set(p.s.id + "|" + p.a.id, i+1)); return r;
 }
 function ddayChip(date){
   const d = dday(date);
@@ -378,16 +406,19 @@ function ddayChip(date){
 /* ───────── 현황표 ───────── */
 function renderBoard(){
   const r = ranked();
-  const list = [...students].sort((a,b) => (r.get(a.id)??999) - (r.get(b.id)??999));
-  $("#board").replaceChildren(...list.map(s => {
-    const rk = r.get(s.id), m = mineCount(s);
-    return h("tr",{class: s.id===selId ? "sel" : "", tabIndex:0,
-        onclick:()=>{selId=s.id; render();}, onkeydown:e=>{ if(e.key==="Enter"){selId=s.id; render();} }},
+  const list = pairs().sort((x,y) => (r.get(x.s.id+"|"+x.a.id) ?? 999) - (r.get(y.s.id+"|"+y.a.id) ?? 999));
+  $("#board").replaceChildren(...list.map(({s,a}) => {
+    const rk = r.get(s.id+"|"+a.id), m = mineCount(a), n = apps(s).length;
+    const open = () => { selId = s.id; selApp = a.id; render(); };
+    return h("tr",{class: (s.id===selId && a.id===selApp) ? "sel" : "", tabIndex:0,
+        onclick:open, onkeydown:e=>{ if(e.key==="Enter") open(); }},
       h("td",null, rk ? h("span",{class:"rank"+(rk<=3?" hot":""),text:rk}) : h("span",{class:"muted",text:"—"})),
-      h("td",null, h("div",{class:"name"}, s.name || "(이름 없음)", s.example && h("span",{class:"chip ex",text:"예시"})),
-        h("div",{class:"muted",text:[s.univ,s.dept].filter(Boolean).join(" ") || "지원 대학 미입력"}),
-        s.sheet?.career?.title && h("div",{class:"career-mini",text:"진로 · "+s.sheet.career.title})),
-      h("td",null, h("div",{class:"num",text:s.date ? s.date.slice(5).replace("-","/") : ""}), ddayChip(s.date)),
+      h("td",null, h("div",{class:"name"}, s.name || "(이름 없음)",
+          n > 1 && h("span",{class:"chip ex",text:`${apps(s).indexOf(a)+1}/${n}`}),
+          s.example && h("span",{class:"chip ex",text:"예시"})),
+        h("div",{class:"muted",text:appLabel(a)}),
+        a.sheet?.career?.title && h("div",{class:"career-mini",text:"진로 · "+a.sheet.career.title})),
+      h("td",null, h("div",{class:"num",text:a.date ? a.date.slice(5).replace("-","/") : ""}), ddayChip(a.date)),
       h("td",null, m == null ? h("span",{class:"muted",text:"—"}) : h("span",{class:"chip "+(m>=4?"red":m>=2?"amber":"green"),text:m+"개"}))
     );
   }));
@@ -395,15 +426,30 @@ function renderBoard(){
 
 /* ───────── 상세 ───────── */
 const TABS = [["info","학생부·정보"],["sheet","예상질문지"],["mock","모의면접"],["blind","블라인드 점검"]];
+function appBar(s0, cur){
+  const list = apps(s0);
+  return h("div",{class:"appbar"},
+    h("span",{class:"label",text:`지원 ${list.length}곳`}),
+    list.map(a => h("button",{class:"app-chip"+(a.id===cur.id?" on":""),onclick:()=>{ selApp = a.id; render(); }},
+      h("span",{text:appLabel(a)}), ddayChip(a.date))),
+    h("button",{class:"app-chip add",text:"+ 지원 추가",onclick:()=>{
+      const a = newApp(); list.push(a); selApp = a.id; tab = "info"; save(s0); render();
+    }}));
+}
 function render(){
   renderBoard();
-  const s = students.find(x => x.id === selId);
+  const s0 = students.find(x => x.id === selId);
   const d = $("#detail");
-  if (!s){ d.replaceChildren(h("div",{class:"empty",text:"왼쪽에서 '+ 학생 추가'를 눌러 시작하세요."})); return; }
+  if (!s0){ d.replaceChildren(h("div",{class:"empty",text:"왼쪽에서 '+ 학생 추가'를 눌러 시작하세요."})); return; }
+  const list = apps(s0);
+  const cur = list.find(x => x.id === selApp) || list[0];
+  selApp = cur.id;
+  const s = view(s0, cur);                       // 이 아래 화면 코드는 고른 지원 기준으로 읽고 쓴다
   d.replaceChildren(
     h("div",{class:"panel-h"},
-      h("h2",null, s.name || "(이름 없음)"),
-      h("span",{class:"muted",text:[s.univ, s.dept, s.track].filter(Boolean).join(" · ")})),
+      h("h2",null, s0.name || "(이름 없음)"),
+      h("span",{class:"muted",text:[cur.univ, cur.dept, cur.track].filter(Boolean).join(" · ")})),
+    appBar(s0, cur),
     careerBanner(s),
     h("div",{class:"tabs",role:"tablist"}, TABS.map(([k,l]) =>
       h("button",{class:"tab",role:"tab","aria-selected":String(tab===k),text:l,onclick:()=>{tab=k; render();}}))),
@@ -433,8 +479,9 @@ function careerBanner(s){
 function field(s, key, label, type="text", opts){
   const id = "f-"+key;
   const input = opts
-    ? h("select",{id, onchange:e=>{s[key]=e.target.value; save(s); renderBoard();}}, opts.map(o=>h("option",{value:o,text:o,selected:s[key]===o})))
-    : h("input",{id, type, value:s[key]||"", oninput:e=>{s[key]=e.target.value; save(s); renderBoard();}});
+    ? h("select",{id, onchange:e=>{s[key]=e.target.value; save(s); render();}}, opts.map(o=>h("option",{value:o,text:o,selected:s[key]===o})))
+    : h("input",{id, type, value:s[key]||"", oninput:e=>{s[key]=e.target.value; save(s); renderBoard();},
+        onchange:()=>render()});          // 입력을 마치면 지원 칩·제목도 다시 그린다
   return h("label",{class:"f",for:id}, label, input);
 }
 
@@ -747,6 +794,13 @@ function viewInfo(s){
     if (!armed){ armed = true; del.textContent = "한 번 더 누르면 삭제됩니다"; return; }
     removeStudent(s);
   }});
+  let armedApp = false;
+  const appDel = apps(s).length > 1 && h("button",{class:"danger",text:"이 지원 삭제",onclick:()=>{
+    if (!armedApp){ armedApp = true; appDel.textContent = "한 번 더 누르면 삭제됩니다"; return; }
+    const list = apps(s);
+    list.splice(list.findIndex(x => x.id === s._app.id), 1);
+    selApp = list[0].id; save(s); render();
+  }});
   const shown = ["3","2","1"].concat(hasGrade(s,"0") ? ["0"] : []);
   const any = shown.some(g => hasGrade(s,g));
   const cut = [...new Set(recordPlan(s, 16000).filter(x => x.cut.length < x.t.length).map(x => GR_LABEL[x.g]))];
@@ -772,7 +826,7 @@ function viewInfo(s){
       h("pre",{class:"raw-pre",text:(s.raw || rawKeep[s.id]).slice(0, 60000)})) : null,
     cut.length ? h("div",{class:"note warn",text:`분량이 많아 한 번에 보낼 때는 ${cut.join("·")} 기록 일부가 빠집니다. 질문지 탭의 ‘전체 분석 (학년별로 나눠서)’을 쓰면 잘리지 않고 전부 반영됩니다.`}) : null,
     h("p",{class:"hint",text:"면접 유형을 모르면 대학 입학처 모집요강이나 선행학습영향평가보고서(전년도 면접 문항 공개)에서 확인하세요."}),
-    h("div",{class:"row"}, genBar(s), h("span",{class:"spacer"}), del)
+    h("div",{class:"row"}, genBar(s), h("span",{class:"spacer"}), appDel, del)
   );
 }
 
@@ -915,16 +969,16 @@ function rulesSheet(s){
 
 const gen = {};
 function genBar(s){
-  const g = gen[s.id] || {};
+  const g = gen[gkey(s)] || {};
   const run = g.state === "run";
-  return h("div",{class:"row",id:"gen-"+s.id},
+  return h("div",{class:"row",id:"gen-"+gkey(s)},
     h("button",{class:"primary",disabled:run,text: run ? "만드는 중…" : "Claude로 만들기",onclick:()=>generateSheet(s)}),
     h("button",{disabled:run,text:"전체 분석 (학년별로 나눠서)",title:"학생부가 길어도 잘리지 않게 3학년·2학년·1학년을 따로 분석해 합칩니다. 시간과 사용량이 더 듭니다.",onclick:()=>generateSheetSplit(s)}),
     h("button",{text:"AI 없이 만들기",title:"학생부 문장에서 규칙으로 질문을 뽑습니다. 돈도 인터넷도 들지 않습니다.",onclick:()=>{
       const sheet = rulesSheet(s);
-      if (!sheet){ gen[s.id] = {state:"err", msg:"학생부를 먼저 넣어 주세요."}; refreshGen(s); return; }
+      if (!sheet){ gen[gkey(s)] = {state:"err", msg:"학생부를 먼저 넣어 주세요."}; refreshGen(s); return; }
       s.sheet = sheet; s.example = false; s.check = [false,false,false,false];
-      gen[s.id] = {state:"done", msg:"규칙으로 만들었습니다."};
+      gen[gkey(s)] = {state:"done", msg:"규칙으로 만들었습니다."};
       save(s); tab = "sheet"; render();
     }}),
     aiReady === false && !g.msg && h("span",{class:"status",text:"이 화면에서는 Claude가 안 될 수 있습니다. 눌러 보고 안 되면 ‘AI 없이 만들기’를 쓰세요."}),
@@ -932,10 +986,10 @@ function genBar(s){
     g.state === "done" && tab !== "sheet" && h("button",{text:"예상질문지 보기 →",onclick:()=>{ tab = "sheet"; render(); }}),
     h("span",{class:"status"+(g.state==="err"?" err":""),text:g.msg||""}));
 }
-const refreshGen = s => { const el = document.getElementById("gen-"+s.id); if (el) el.replaceWith(genBar(s)); };
+const refreshGen = s => { const el = document.getElementById("gen-"+gkey(s)); if (el) el.replaceWith(genBar(s)); };
 
 async function generateSheet(s){
-  const g = gen[s.id] = {state:"run", msg:"학생부를 읽는 중… (보통 30초~2분)"};
+  const g = gen[gkey(s)] = {state:"run", msg:"학생부를 읽는 중… (보통 30초~2분)"};
   const fail = msg => { g.state = "err"; g.msg = msg; refreshGen(s); };
   refreshGen(s);
   if (!recordText(s).trim()) return fail("학생부·정보 탭에서 학년별 세특·창체·행발을 먼저 넣어 주세요.");
@@ -978,7 +1032,7 @@ JSON만 출력: {"career":{...},"narrative":"...","closing":"...","warnings":[]}
 [영역별 질문] ${byArea.map(([a,qs]) => `${a}: ${qs.map(q=>q.q).slice(0,6).join(" | ")}`).join("\n")}`;
 }
 async function generateSheetSplit(s){
-  const g = gen[s.id] = {state:"run", msg:"학년별로 나눠 분석합니다…"};
+  const g = gen[gkey(s)] = {state:"run", msg:"학년별로 나눠 분석합니다…"};
   const fail = msg => { g.state = "err"; g.msg = msg; refreshGen(s); };
   refreshGen(s);
   const grades = ["3","2","1","0"].filter(x => hasGrade(s,x));
@@ -1409,8 +1463,8 @@ function viewBlind(s){
 }
 
 $("#add").onclick = () => {
-  const s = {id:"s"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:"새 학생", univ:"", dept:"", track:"학생부종합", itype:"서류 기반 확인 면접", date:"", record:"", check:[false,false,false,false], chat:[], sheet:null};
-  students.push(s); selId = s.id; tab = "info"; save(s); render();
+  const s = {id:"s"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:"새 학생", rec:emptyRec(), apps:[newApp()]};
+  students.push(s); selId = s.id; selApp = s.apps[0].id; tab = "info"; save(s); render();
   setTimeout(()=>{ const n=$("#f-name"); n?.focus(); n?.select(); }, 0);
 };
 
