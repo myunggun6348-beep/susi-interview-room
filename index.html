@@ -33,14 +33,14 @@
   --bubble-me:#1F3530; --bubble-them:#1F2926;
 }
 *{box-sizing:border-box}
-body{background:var(--ground);color:var(--ink);font:15px/1.65 var(--f-body);padding-inline:16px;padding-block:20px 48px}
+body{background:var(--ground);color:var(--ink);font:15.5px/1.75 var(--f-body);padding-inline:16px;padding-block:20px 56px;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1180px;margin:0 auto}
 header.top{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;margin-bottom:18px}
 h1{font:800 26px/1.2 var(--f-disp);margin:0;letter-spacing:-.01em}
 .sub{color:var(--ink-2);font-size:13px}
 .store{font-size:12px;color:var(--ink-2)}
-.layout{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:20px;align-items:start}
-@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.layout{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:1040px){.layout{grid-template-columns:1fr}}   /* 좁으면 한 단으로 — 상세 화면이 눌리지 않게 */
 .panel{background:var(--paper);border:1px solid var(--line);border-radius:10px}
 .panel-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line-2)}
 .panel-h h2{font:700 17px/1.3 var(--f-disp);margin:0}
@@ -55,15 +55,15 @@ button:disabled{opacity:.5;cursor:default}
 .tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th{font-size:11px;letter-spacing:.06em;color:var(--ink-2);font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-2);white-space:nowrap}
-td{padding:10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+td{padding:12px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
 tbody tr{cursor:pointer}
 tbody tr:hover{background:var(--line-2)}
 tbody tr.sel{background:var(--accent-soft)}
 .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .rank{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--line-2);font:500 12px var(--f-mono)}
 .rank.hot{background:var(--mine);color:var(--paper)}
-.name{font-weight:600}
-.muted{color:var(--ink-2);font-size:12.5px}
+.name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.muted{color:var(--ink-2);font-size:13px}
 .chip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
 .chip.red{background:var(--mine-soft);color:var(--mine)}
 .chip.amber{background:var(--warn-soft);color:var(--warn)}
@@ -73,19 +73,19 @@ tbody tr.sel{background:var(--accent-soft)}
 .legend{padding:10px 16px;font-size:12px;color:var(--ink-2)}
 /* 상세 */
 .tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line-2);overflow-x:auto}
-.tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:12px 10px;color:var(--ink-2);white-space:nowrap}
+.tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:14px 14px;font-size:15px;color:var(--ink-2);white-space:nowrap}
 .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
-.body{padding:18px}
+.body{padding:22px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-2);font-weight:600}
 input,select,textarea{font:inherit;font-size:14.5px;color:var(--ink);background:var(--ground);border:1px solid var(--line);border-radius:7px;padding:8px 10px;width:100%}
 textarea{resize:vertical;line-height:1.6}
-.hint{font-size:12.5px;color:var(--ink-2);margin:6px 0 0}
+.hint{font-size:13px;line-height:1.65;color:var(--ink-2);margin:6px 0 0;max-width:70ch}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .spacer{flex:1}
 .status{font-size:13px;color:var(--ink-2)}
 .status.err{color:var(--mine)}
-.note{border:1px solid var(--line);background:var(--ground);border-radius:8px;padding:10px 12px;font-size:13.5px}
+.note{border:1px solid var(--line);background:var(--ground);border-radius:8px;padding:12px 14px;font-size:14px;line-height:1.7}
 .note.warn{border-color:var(--warn);background:var(--warn-soft);color:var(--ink)}
 /* 질문지 */
 .sheet h3{font:700 18px/1.35 var(--f-disp);margin:26px 0 10px;text-wrap:balance}
@@ -150,6 +150,14 @@ h1,h2,h3,.career-title,.year-t,.mine-h .t,.qa .q,.narr,.item-k{word-break:keep-a
 }
 /* 학년별 학생부 */
 .sec-h{font:700 17px/1.3 var(--f-disp);margin:0}
+/* 학생부·정보 탭을 네 구역으로 나눈다 */
+.sec{display:grid;gap:12px;padding-top:20px;border-top:1px solid var(--line-2)}
+.sec:first-child{padding-top:0;border-top:0}
+.sec-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.sec-head h3{font:700 16px/1.3 var(--f-disp);margin:0}
+.sec-head .muted{font-size:12.5px}
+.info{display:grid;gap:22px}
+.years{display:grid;gap:12px}
 .year{border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin:0}
 .year.y3{border:2px solid var(--accent)}
 .year legend{font:700 15px var(--f-disp);padding:0 6px}
@@ -885,71 +893,70 @@ function viewInfo(s){
   const shown = ["3","2","1"].concat(hasGrade(s,"0") ? ["0"] : []);
   const any = shown.some(g => hasGrade(s,g));
   const cut = [...new Set(recordPlan(s, 16000).filter(x => x.cut.length < x.t.length).map(x => GR_LABEL[x.g]))];
-  return h("div",{style:"display:grid;gap:16px"},
-    s.example && h("div",{class:"note",text:"예시 학생입니다. 내용을 바꾸면 그대로 선생님 데이터로 저장되고, 필요 없으면 아래에서 삭제하세요."}),
-    h("div",{class:"grid"},
-      field(s,"name","학생 이름"),
-      field(s,"univ","지원 대학"),
-      field(s,"dept","지원 학과"),
-      field(s,"track","전형명"),
-      field(s,"itype","면접 유형","",["서류 기반 확인 면접","제시문 기반 면접","인성·상황 면접"]),
-      field(s,"date","면접일","date")),
-    (() => {                                       // 계열 — 학과 이름으로 자동 판단하되 직접 고를 수 있다
-      const g = curField(s), auto = guessField(s.dept);
-      return h("div",{class:"note"},
-        h("div",{class:"row"},
-          h("span",{class:"label",text:"계열"}),
-          h("select",{"aria-label":"계열",style:"width:auto",onchange:e=>{ s.field = e.target.value; save(s); render(); }},
-            ["자동 판단", ...FIELD_NAMES].map(o => h("option",{value:o,text: o === "자동 판단" ? (auto ? `자동 판단 (${auto[0]})` : "자동 판단 (판단 못 함)") : o, selected:(s.field||"자동 판단") === o}))),
-          g && h("span",{class:"chip acc",text:g[0]})),
-        g ? h("p",{class:"hint",style:"margin-top:6px",text:g[1]})
-          : h("p",{class:"hint",text:"학과 이름으로 계열을 못 찾았습니다. 위에서 직접 골라 주시면 그 계열의 면접 경향을 반영합니다."}));
-    })(),
-    h("label",{class:"f",for:"f-uinfo"},
-      h("span",{class:"row"}, "이 대학·전형의 면접 방식 (선택)", h("span",{class:"spacer"}),
-        h("span",{class:"muted",text:((s.uinfo||"").length).toLocaleString()+"자"})),
+  const fld = curField(s), auto = guessField(s.dept);
+  const searchStatus = h("span",{class:"status"});
+  const sec = (title, note, ...kids) => h("section",{class:"sec"},
+    h("div",{class:"sec-head"}, h("h3",{text:title}), note && h("span",{class:"muted",text:note})), ...kids);
+
+  return h("div",{class:"info"},
+    s.example && h("div",{class:"note",text:"예시 학생입니다. 내용을 바꾸면 그대로 선생님 데이터로 저장되고, 필요 없으면 맨 아래에서 삭제하세요."}),
+
+    sec("지원 정보", apps(s).length > 1 ? `지원 ${apps(s).length}곳 중 ${apps(s).indexOf(s._app)+1}번째` : null,
+      h("div",{class:"grid"},
+        field(s,"name","학생 이름"),
+        field(s,"univ","지원 대학"),
+        field(s,"dept","지원 학과"),
+        field(s,"track","전형명"),
+        field(s,"itype","면접 유형","",["서류 기반 확인 면접","제시문 기반 면접","인성·상황 면접"]),
+        field(s,"date","면접일","date")),
+      h("div",{class:"row"},
+        h("span",{class:"label",text:"계열"}),
+        h("select",{"aria-label":"계열",style:"width:auto",onchange:e=>{ s.field = e.target.value; save(s); render(); }},
+          ["자동 판단", ...FIELD_NAMES].map(o => h("option",{value:o,
+            text: o === "자동 판단" ? (auto ? `자동 판단 (${auto[0]})` : "자동 판단 (판단 못 함)") : o,
+            selected:(s.field||"자동 판단") === o}))),
+        fld && h("span",{class:"muted",text:fld[1].split(".")[0] + "."}))),
+
+    sec("대학 면접 방식", "적어 두면 질문지와 모의면접이 이 방식에 맞춰집니다",
       h("textarea",{id:"f-uinfo",rows:3,value:s.uinfo||"",
-        placeholder:"예) 서류 확인 면접 10분, 제시문 없음. 전년도 선행학습영향평가보고서에 나온 문항 유형: 지원 동기, 탐구 과정의 어려움, 협업 경험. 인성 질문 비중이 높음.",
-        oninput:e=>{                                    // 적는 순간 대학·전형 자료집에도 함께 남는다
+        placeholder:"예) 서류 확인 면접 10분, 제시문 없음. 지원 동기와 탐구 과정, 협업 경험을 주로 물음.",
+        oninput:e=>{
           s.uinfo = e.target.value; s._app.uinfoFromBank = false;
           const k = bankKey(s._app);
           if (k !== "|"){ if (e.target.value.trim()) bank[k] = e.target.value; else delete bank[k]; bankSave(); }
           save(s);
-        }})),
-    (() => {
-      const st = h("span",{class:"status"});
-      return h("div",{class:"row"},
-        h("button",{text:"웹에서 찾아 채우기",title:"입학처와 선행학습영향평가보고서를 검색해 면접 방식을 요약합니다.",onclick:()=>fetchUinfo(s, st)}),
-        st);
-    })(),
-    bankKey(s._app) !== "|" && h("p",{class:"hint"},
-      s._app.uinfoFromBank ? `같은 ${s.univ} ${s.track} 지원자에게 적어 둔 내용을 가져왔습니다. 고치면 그 대학 자료도 함께 바뀝니다.`
-        : `여기 적은 내용은 ${s.univ||"이 대학"} ${s.track||""} 자료로 저장돼, 같은 곳을 지원한 다른 학생에게도 자동으로 채워집니다.`),
-    Object.keys(bank).length ? h("details",{class:"raw"},
-      h("summary",{text:`저장해 둔 대학·전형 면접 방식 ${Object.keys(bank).length}건`}),
-      h("div",{class:"bank"}, Object.entries(bank).map(([k, v]) => h("div",{class:"bank-row"},
-        h("div",null, h("b",{text:k.replace("|"," · ")}),
-          h("button",{class:"tiny",text:"이 지원에 넣기",onclick:()=>{ s.uinfo = v; s._app.uinfoFromBank = true; save(s); render(); }}),
-          h("button",{class:"tiny danger",text:"삭제",onclick:()=>{ delete bank[k]; bankSave(); render(); }})),
-        h("div",{class:"muted",text:v.slice(0,120) + (v.length > 120 ? "…" : "")})))) ) : null,
-    h("p",{class:"hint",text:"대학 입학처 모집요강이나 선행학습영향평가보고서(전년도 면접 문항 공개)에서 확인한 내용을 적어 두면, 질문지와 모의면접이 그 대학 방식에 맞춰집니다. 지원마다 따로 저장됩니다."}),
-    viewImport(s),
-    h("div",{class:"row"},
-      h("h3",{class:"sec-h",text:"학생부"}), h("span",{class:"spacer"}),
-      h("button",{text: editRec ? "정리된 보기로" : (any ? "직접 고치기" : "직접 입력하기"), onclick:()=>{ editRec = !editRec; render(); }})),
-    editRec ? shown.map(g => yearEdit(s,g))
-      : any ? shown.filter(g => hasGrade(s,g) || g !== "0").map(g => yearCard(s,g))
-      : h("div",{class:"empty",text:"나이스 파일을 불러오거나 '직접 입력하기'로 학년별 세특·창체·행발을 넣어 주세요."}),
-    (s.raw || rawKeep[s.id]) ? h("details",{class:"raw"},
-      h("summary",{text:"파일 원문 전체 보기 (걸러내기 전)"}),
-      h("p",{class:"hint",text:"성적·수상·독서·출결까지 파일에서 읽은 그대로입니다. 위 칸에 빠진 내용이 있으면 여기서 복사해 ‘직접 고치기’로 넣으세요. 면접 질문은 세특·창체·행발만 보고 만듭니다(수상·독서·어학은 대입 미반영이라 일부러 뺍니다)."}),
+        }}),
       h("div",{class:"row"},
-        h("span",{class:"muted",text:`이 학생 저장 용량 ${Math.round(usedBytes(s)/1024)}KB / 약 230KB`}),
-        s.raw ? h("button",{class:"tiny",text:"원문 지우기(용량 확보)",onclick:()=>{ s.raw = null; save(s); render(); }}) : null),
-      h("pre",{class:"raw-pre",text:(s.raw || rawKeep[s.id]).slice(0, 60000)})) : null,
-    cut.length ? h("div",{class:"note warn",text:`분량이 많아 한 번에 보낼 때는 ${cut.join("·")} 기록 일부가 빠집니다. 질문지 탭의 ‘전체 분석 (학년별로 나눠서)’을 쓰면 잘리지 않고 전부 반영됩니다.`}) : null,
-    h("p",{class:"hint",text:"면접 유형을 모르면 대학 입학처 모집요강이나 선행학습영향평가보고서(전년도 면접 문항 공개)에서 확인하세요."}),
-    h("div",{class:"row"}, genBar(s), h("span",{class:"spacer"}), appDel, del)
+        h("button",{text:"웹에서 찾아 채우기",title:"입학처와 선행학습영향평가보고서를 검색해 요약합니다.",onclick:()=>fetchUinfo(s, searchStatus)}),
+        searchStatus),
+      s._app.uinfoFromBank ? h("p",{class:"hint",text:`같은 ${s.univ} ${s.track} 지원자에게 적어 둔 내용을 가져왔습니다.`}) : null,
+      Object.keys(bank).length ? h("details",{class:"raw"},
+        h("summary",{text:`저장해 둔 대학·전형 ${Object.keys(bank).length}건`}),
+        h("div",{class:"bank"}, Object.entries(bank).map(([k, v]) => h("div",{class:"bank-row"},
+          h("div",{class:"row"}, h("b",{text:k.replace("|"," · ")}),
+            h("button",{class:"tiny",text:"이 지원에 넣기",onclick:()=>{ s.uinfo = v; s._app.uinfoFromBank = true; save(s); render(); }}),
+            h("button",{class:"tiny danger",text:"삭제",onclick:()=>{ delete bank[k]; bankSave(); render(); }})),
+          h("div",{class:"muted",text:v.slice(0,120) + (v.length > 120 ? "…" : "")})))) ) : null),
+
+    sec("학생부", any ? null : "나이스 파일을 불러오거나 직접 입력하세요",
+      viewImport(s),
+      h("div",{class:"row"}, h("span",{class:"spacer"}),
+        h("button",{text: editRec ? "정리된 보기로" : (any ? "직접 고치기" : "직접 입력하기"), onclick:()=>{ editRec = !editRec; render(); }})),
+      editRec ? h("div",{class:"years"}, shown.map(g => yearEdit(s,g)))
+        : any ? h("div",{class:"years"}, shown.filter(g => hasGrade(s,g) || g !== "0").map(g => yearCard(s,g)))
+        : h("div",{class:"empty",text:"세특·창체·행발이 학년별로 정리되어 여기에 나옵니다."}),
+      cut.length ? h("div",{class:"note warn",text:`분량이 많아 한 번에 보낼 때는 ${cut.join("·")} 기록 일부가 빠집니다. 질문지 탭의 '전체 분석'을 쓰면 전부 반영됩니다.`}) : null,
+      (s.raw || rawKeep[s.id]) ? h("details",{class:"raw"},
+        h("summary",{text:"파일 원문 전체 보기 (걸러내기 전)"}),
+        h("div",{class:"row"},
+          h("span",{class:"muted",text:`저장 용량 ${Math.round(usedBytes(s)/1024)}KB / 약 230KB`}),
+          s.raw ? h("button",{class:"tiny",text:"원문 지우기",onclick:()=>{ s.raw = null; save(s); render(); }}) : null),
+        h("p",{class:"hint",text:"성적·수상·독서·출결까지 파일에서 읽은 그대로입니다. 빠진 내용이 있으면 여기서 복사해 넣으세요. 질문은 세특·창체·행발만 보고 만듭니다."}),
+        h("pre",{class:"raw-pre",text:(s.raw || rawKeep[s.id]).slice(0, 60000)})) : null),
+
+    sec("예상질문지 만들기", null,
+      genBar(s),
+      h("div",{class:"row",style:"margin-top:4px"}, h("span",{class:"spacer"}), appDel, del))
   );
 }
 
