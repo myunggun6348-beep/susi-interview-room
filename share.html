@@ -373,9 +373,9 @@ function dday(date){
 }
 /* 한 학생이 수시 여러 장을 쓴다. 학생부는 학생 한 벌, 대학·전형·면접일과 질문지·모의면접은 지원마다 따로.
    화면 코드는 예전처럼 s.univ / s.sheet 로 읽고 쓰되, view()가 그것을 '지금 고른 지원'으로 돌린다. */
-const APP_FIELDS = new Set(["univ","dept","track","itype","date","sheet","chat","practice","check","mockMode"]);
+const APP_FIELDS = new Set(["univ","dept","track","itype","date","sheet","chat","practice","check","mockMode","uinfo"]);
 const newApp = (o = {}) => ({id:"a"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
-  univ:"", dept:"", track:"학생부종합", itype:"서류 기반 확인 면접", date:"", sheet:null, chat:[], practice:null, check:[false,false,false,false], ...o});
+  univ:"", dept:"", track:"학생부종합", itype:"서류 기반 확인 면접", date:"", uinfo:"", sheet:null, chat:[], practice:null, check:[false,false,false,false], ...o});
 const apps = s => ((s._raw || s).apps ||= [newApp()]);
 const view = (s, a) => new Proxy(s, {
   get: (t,k) => k === "_raw" ? t : k === "_app" ? a : APP_FIELDS.has(k) ? a[k] : t[k],
@@ -810,6 +810,13 @@ function viewInfo(s){
       field(s,"track","전형명"),
       field(s,"itype","면접 유형","",["서류 기반 확인 면접","제시문 기반 면접","인성·상황 면접"]),
       field(s,"date","면접일","date")),
+    h("label",{class:"f",for:"f-uinfo"},
+      h("span",{class:"row"}, "이 대학·전형의 면접 방식 (선택)", h("span",{class:"spacer"}),
+        h("span",{class:"muted",text:((s.uinfo||"").length).toLocaleString()+"자"})),
+      h("textarea",{id:"f-uinfo",rows:3,value:s.uinfo||"",
+        placeholder:"예) 서류 확인 면접 10분, 제시문 없음. 전년도 선행학습영향평가보고서에 나온 문항 유형: 지원 동기, 탐구 과정의 어려움, 협업 경험. 인성 질문 비중이 높음.",
+        oninput:e=>{ s.uinfo = e.target.value; save(s); }})),
+    h("p",{class:"hint",text:"대학 입학처 모집요강이나 선행학습영향평가보고서(전년도 면접 문항 공개)에서 확인한 내용을 적어 두면, 질문지와 모의면접이 그 대학 방식에 맞춰집니다. 지원마다 따로 저장됩니다."}),
     viewImport(s),
     h("div",{class:"row"},
       h("h3",{class:"sec-h",text:"학생부"}), h("span",{class:"spacer"}),
@@ -859,6 +866,8 @@ JSON 하나만 출력한다. 형식:
 {"career":{"title":"...","field":"...","basis":[{"grade":"1학년","point":"..."}],"fit":{"level":"높음","note":"..."},"shift":""},"narrative":"...","warnings":["..."],"mines":[{"item":"기재 내용 요약","evidence":"원문 인용","source":"3학년 세특-...","questions":["...","..."]}],"sections":[{"area":"전공적합성","questions":[{"q":"...","evidence":"원문 인용","source":"3학년 ...","keywords":["","",""],"skeleton":"... → ... → ... → ...","baseline":"저는 ...","avoid":"‘...’ — ...","answer":"저는 ...","tails":["...","..."]}]}],"closing":"..."}
 
 ${scope}
+
+[이 대학·전형의 면접 방식] ${(s.uinfo||"").trim().slice(0,2000) || "(담임이 적어 둔 정보 없음 — 일반적인 학생부종합 면접으로 본다)"}
 
 [학생 정보]
 지원: ${s.univ||"미입력"} ${s.dept||""} / 전형: ${s.track||"미입력"} / 면접 유형: ${s.itype||"서류 기반 확인 면접"} / 면접일: ${s.date||"미정"}
@@ -1264,8 +1273,16 @@ function viewSheet(s){
 
 /* ───────── 모의면접 ───────── */
 let mockCtl = null, askedAt = null;
+// 학생이 답한 횟수로 지금 몇 번째 질문인지 어림잡아 다음 역량을 정한다(꼬리질문까지 두 번 답하면 한 문항)
+function nextArea(s){
+  const answered = (s.chat||[]).filter(m => m.role === "user").length;
+  return AREA_ORDER[Math.floor(answered / 2) % AREA_ORDER.length];
+}
 function mockRules(s, budget = 9000){
   const sh = s.sheet ? JSON.stringify({career:s.sheet.career?.title, narrative:s.sheet.narrative, mines:s.sheet.mines?.map(m=>m.item)}) : "(질문지 없음)";
+  const area = nextArea(s);
+  const bank = (s.sheet?.sections || []).find(x => x.area === area)?.questions?.slice(0,5).map(q => `- ${q.q}`).join("\n") || "";
+  const uinfo = (s.uinfo||"").trim();
   return `너는 ${s.univ||"지원 대학"} ${s.dept||""} ${s.track||""} 면접관이다. 면접 유형: ${s.itype||"서류 기반 확인 면접"}.
 아래 학생부를 근거로 질문한다. 상대는 고3 학생이다.
 
@@ -1276,6 +1293,9 @@ function mockRules(s, budget = 9000){
 4. 학생부에 없는 활동을 전제로 질문하지 않는다. 3학년 → 2학년 기록을 우선 묻고(1학년은 계기 확인 정도), 지뢰 항목(고교 수준을 넘는 개념, 과정이 빠진 탐구)을 파고든다.
 5. 학생이 모른다고 하면 다그치지 말고 넘어가되, 피드백에서 "모르면 모른다고 답하고 배우고 싶다는 태도"가 낫다는 원칙을 짚는다.
 6. 면접관 말은 실제 면접처럼 정중하고 간결하게, 3문장 이내(피드백 블록 제외). 답변을 대신 써 주지 않는다.
+7. 평가 역량을 돌아가며 묻는다: 전공적합성 → 학업·탐구역량 → 자기주도·문제해결역량 → 공동체·인성역량 순서로 한 문항씩. 지금 차례는 [${area}]다. 새 질문은 이 역량을 보는 질문으로 낸다(꼬리질문은 같은 역량 안에서 이어 간다). 한 바퀴를 돌면 다시 처음 역량으로 가되 같은 질문을 되풀이하지 않는다.
+${bank ? `8. 이번 역량의 후보 질문이다. 그대로 쓰거나, 학생 답변 흐름에 맞게 다듬어 쓴다.\n${bank}` : ""}
+${uinfo ? `\n[이 대학·전형의 면접 방식] 아래는 담임이 확인한 정보다. 질문 방식과 비중을 여기에 맞춘다.\n${uinfo.slice(0,2000)}` : ""}
 
 [지뢰·서사 요약] ${sh}
 
