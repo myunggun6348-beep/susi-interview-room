@@ -369,6 +369,23 @@ async function initStore(){
   render();
 }
 
+/* 학생 한 명이 차지할 수 있는 저장 공간에 한도가 있다(약 250KB). 지원 여섯 장에 질문지와
+   대화 기록이 쌓이면 걸리므로, 저장 직전에 오래된 대화와 파일 원문부터 줄인다. */
+const LIMIT = 230000;
+const sizeOf = o => new Blob([JSON.stringify(o)]).size;
+function trimForSave(s){
+  const body = JSON.parse(JSON.stringify(s));
+  for (const a of body.apps || []) if (a.chat?.length > 40) a.chat = a.chat.slice(-40);
+  if (sizeOf(body) > LIMIT && body.raw){ delete body.raw; s.raw = null; }     // 파일 원문이 가장 크다
+  while (sizeOf(body) > LIMIT){
+    const longest = (body.apps || []).filter(a => a.chat?.length).sort((x,y) => y.chat.length - x.chat.length)[0];
+    if (!longest) break;
+    longest.chat = longest.chat.slice(-Math.max(4, Math.floor(longest.chat.length / 2)));
+  }
+  return body;
+}
+const usedBytes = s => sizeOf(trimForSave(raw(s)));
+
 const timers = {}, chains = {};
 function save(s0){
   const s = raw(s0);
@@ -377,7 +394,7 @@ function save(s0){
   if (!col) return;
   clearTimeout(timers[s.id]);
   timers[s.id] = setTimeout(() => {
-    const body = JSON.parse(JSON.stringify(s));
+    const body = trimForSave(s);
     chains[s.id] = (chains[s.id] || Promise.resolve())
       .then(() => col.doc(s.id).set(body))
       .catch(e => { $("#store").textContent = e?.code === "quota_exceeded" ? "저장 공간이 가득 찼습니다. 끝난 학생을 삭제해 주세요." : "저장 실패 — 잠시 후 다시 수정하면 재시도합니다."; });
@@ -399,7 +416,7 @@ function dday(date){
 }
 /* 한 학생이 수시 여러 장을 쓴다. 학생부는 학생 한 벌, 대학·전형·면접일과 질문지·모의면접은 지원마다 따로.
    화면 코드는 예전처럼 s.univ / s.sheet 로 읽고 쓰되, view()가 그것을 '지금 고른 지원'으로 돌린다. */
-const APP_FIELDS = new Set(["univ","dept","track","itype","date","sheet","chat","practice","check","mockMode","uinfo"]);
+const APP_FIELDS = new Set(["univ","dept","track","itype","date","sheet","chat","practice","check","mockMode","uinfo","field"]);
 const newApp = (o = {}) => ({id:"a"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
   univ:"", dept:"", track:"학생부종합", itype:"서류 기반 확인 면접", date:"", uinfo:"", sheet:null, chat:[], practice:null, check:[false,false,false,false], ...o});
 const apps = s => ((s._raw || s).apps ||= [newApp()]);
@@ -711,7 +728,7 @@ async function importFile(s, file){
       : ext === "txt" ? new TextDecoder().decode(buf)
       : (()=>{ throw new Error("PDF, HWP, HWPX, XLSX, XLS, TXT 파일만 불러올 수 있습니다."); })();
     rawKeep[s.id] = raw;
-    s.raw = raw.slice(0, 120000);              // 걸러내기 전 원문 — 화면에서 확인하고 필요하면 직접 옮겨 쓴다                                  // 분리가 이상할 때 확인용 — 저장하지 않고 이 화면에서만 들고 있다
+    s.raw = raw.slice(0, 20000);              // 걸러내기 전 원문 — 화면에서 확인하고 필요하면 직접 옮겨 쓴다                                  // 분리가 이상할 때 확인용 — 저장하지 않고 이 화면에서만 들고 있다
     if ((raw.match(/[가-힣]/g)||[]).length < 50) throw new Error("글자를 찾지 못했습니다. 스캔한 이미지 PDF라면 나이스에서 다시 저장해 주세요.");
     const r = splitRecord(raw);
     s.example = false; editRec = false;
@@ -838,6 +855,17 @@ function viewInfo(s){
       field(s,"track","전형명"),
       field(s,"itype","면접 유형","",["서류 기반 확인 면접","제시문 기반 면접","인성·상황 면접"]),
       field(s,"date","면접일","date")),
+    (() => {                                       // 계열 — 학과 이름으로 자동 판단하되 직접 고를 수 있다
+      const g = curField(s), auto = guessField(s.dept);
+      return h("div",{class:"note"},
+        h("div",{class:"row"},
+          h("span",{class:"label",text:"계열"}),
+          h("select",{"aria-label":"계열",style:"width:auto",onchange:e=>{ s.field = e.target.value; save(s); render(); }},
+            ["자동 판단", ...FIELD_NAMES].map(o => h("option",{value:o,text: o === "자동 판단" ? (auto ? `자동 판단 (${auto[0]})` : "자동 판단 (판단 못 함)") : o, selected:(s.field||"자동 판단") === o}))),
+          g && h("span",{class:"chip acc",text:g[0]})),
+        g ? h("p",{class:"hint",style:"margin-top:6px",text:g[1]})
+          : h("p",{class:"hint",text:"학과 이름으로 계열을 못 찾았습니다. 위에서 직접 골라 주시면 그 계열의 면접 경향을 반영합니다."}));
+    })(),
     h("label",{class:"f",for:"f-uinfo"},
       h("span",{class:"row"}, "이 대학·전형의 면접 방식 (선택)", h("span",{class:"spacer"}),
         h("span",{class:"muted",text:((s.uinfo||"").length).toLocaleString()+"자"})),
@@ -870,6 +898,9 @@ function viewInfo(s){
     (s.raw || rawKeep[s.id]) ? h("details",{class:"raw"},
       h("summary",{text:"파일 원문 전체 보기 (걸러내기 전)"}),
       h("p",{class:"hint",text:"성적·수상·독서·출결까지 파일에서 읽은 그대로입니다. 위 칸에 빠진 내용이 있으면 여기서 복사해 ‘직접 고치기’로 넣으세요. 면접 질문은 세특·창체·행발만 보고 만듭니다(수상·독서·어학은 대입 미반영이라 일부러 뺍니다)."}),
+      h("div",{class:"row"},
+        h("span",{class:"muted",text:`이 학생 저장 용량 ${Math.round(usedBytes(s)/1024)}KB / 약 230KB`}),
+        s.raw ? h("button",{class:"tiny",text:"원문 지우기(용량 확보)",onclick:()=>{ s.raw = null; save(s); render(); }}) : null),
       h("pre",{class:"raw-pre",text:(s.raw || rawKeep[s.id]).slice(0, 60000)})) : null,
     cut.length ? h("div",{class:"note warn",text:`분량이 많아 한 번에 보낼 때는 ${cut.join("·")} 기록 일부가 빠집니다. 질문지 탭의 ‘전체 분석 (학년별로 나눠서)’을 쓰면 잘리지 않고 전부 반영됩니다.`}) : null,
     h("p",{class:"hint",text:"면접 유형을 모르면 대학 입학처 모집요강이나 선행학습영향평가보고서(전년도 면접 문항 공개)에서 확인하세요."}),
@@ -1321,14 +1352,19 @@ let mockCtl = null, askedAt = null;
 const FIELDS = [
   [/의예|의학|치의|한의|약학|간호|보건|수의/, "의약·보건", "인성과 윤리, 의료인의 태도를 묻는 비중이 크다. 상황 제시형(환자·동료와의 갈등, 자원 배분)이 자주 나온다. 생명과학·화학 개념의 정확한 이해를 확인한다. 봉사와 협업 경험에서 '왜 그렇게 행동했는지'를 파고든다."],
   [/교육|사범|초등|유아교육|특수교육/, "교육", "교직 적성과 인성이 핵심이다. 학생을 대하는 태도, 갈등 조정, 공동체 기여 경험을 깊게 묻는다. 교과 지식은 '어떻게 가르칠 것인가'와 엮어 묻는다. 상황 제시형(수업 방해 학생, 학부모 민원)이 자주 나온다."],
-  [/공학|공과|전기|전자|기계|컴퓨터|소프트|반도체|화공|신소재|건축|토목|산업|항공|로봇|에너지|정보/, "공학", "탐구의 과정과 설계를 집요하게 묻는다. 수학·물리·화학 개념을 정의부터 설명하게 한다. 실패한 지점과 개선 시도를 중요하게 본다. 상위권 대학은 수학·과학 제시문 풀이가 붙기도 한다."],
+  [/자유전공|자율전공|융합|첨단|학부대학|스마트전공/, "융합·자유전공", "왜 한 전공으로 좁히지 않았는지, 무엇을 어떻게 엮고 싶은지를 묻는다. 관심 분야 두 가지를 연결한 경험과 앞으로의 계획을 구체적으로 확인한다. 자기주도적으로 공부한 방법도 중요하다."],
+  [/공학|공과|전기|전자|기계|컴퓨터|소프트|반도체|화공|신소재|건축|토목|산업|항공|로봇|에너지|정보|인공지능|데이터사이언스|빅데이터/, "공학", "탐구의 과정과 설계를 집요하게 묻는다. 수학·물리·화학 개념을 정의부터 설명하게 한다. 실패한 지점과 개선 시도를 중요하게 본다. 상위권 대학은 수학·과학 제시문 풀이가 붙기도 한다."],
   [/수학|물리|화학|생명|지구|천문|통계|자연/, "자연과학", "개념의 정확한 이해와 탐구 설계를 묻는다. 결과보다 가설·변인 통제·오차 해석을 파고든다. 관련 교과 세특의 심화 내용을 확인한다."],
   [/경영|경제|무역|회계|금융|행정|정치|사회|언론|미디어|심리|복지/, "사회·상경", "사회 현상에 대한 관심과 근거 있는 설명을 본다. 통계·자료를 어떻게 해석했는지 묻는다. 시사 이슈를 자기 경험과 엮어 말하게 한다. 협업에서의 역할과 갈등 조정도 자주 묻는다."],
+  [/음악|미술|체육|무용|연기|연극|영화|영상|디자인|패션|조형|공연|만화|애니|스포츠/, "예체능", "실기와 전공 소양을 함께 본다. 작품·활동의 의도와 과정, 스스로 연습한 방법을 묻는다. 진로에 대한 각오와 꾸준함을 확인한다. 실기 평가는 별도이니 면접에서는 태도와 이해를 본다."],
+  [/농업|농생명|생명자원|식품|영양|원예|축산|산림|조경|수산|해양|환경/, "농생명·환경", "생명과학·화학 개념과 현장 감각을 함께 본다. 기후·먹거리·환경 문제를 자기 탐구와 엮어 설명하게 한다. 실험·재배·조사처럼 몸으로 한 경험의 과정을 묻는다."],
   [/국어|국문|영문|사학|철학|문헌|어문|인문|언어/, "인문", "읽은 내용을 자기 언어로 재구성하는 힘을 본다. 근거를 들어 주장을 펴는지, 반론에 어떻게 답하는지 확인한다. 세특에 녹아 있는 독서 내용을 깊게 묻는다."],
 ];
 const guessField = dept => FIELDS.find(([re]) => re.test(dept||""))?.slice(1) || null;
+const FIELD_NAMES = FIELDS.map(x => x[1]);
+const curField = s => (s.field && s.field !== "자동 판단") ? FIELDS.find(x => x[1] === s.field)?.slice(1) : guessField(s.dept);
 function fieldBlock(s){
-  const f = guessField(s.dept);
+  const f = curField(s);
   return f ? `[계열 경향 — ${f[0]}] ${f[1]} (일반적인 경향이다. 아래 '면접 방식'에 적힌 내용이 있으면 그쪽을 우선한다.)` : "";
 }
 
@@ -1354,7 +1390,10 @@ function readTag(text){                       // 표시를 읽어내고 화면�
 function mockRules(s, budget = 9000){
   const sh = s.sheet ? JSON.stringify({career:s.sheet.career?.title, narrative:s.sheet.narrative, mines:s.sheet.mines?.map(m=>m.item)}) : "(질문지 없음)";
   const area = nextArea(s);
-  const bank = (s.sheet?.sections || []).find(x => x.area === area)?.questions?.slice(0,5).map(q => `- ${q.q}`).join("\n") || "";
+  const qs = (s.sheet?.sections || []).find(x => x.area === area)?.questions || [];
+  const bank = qs.slice(0,5).map(q => `- ${q.q}`).join("\n");
+  const std = qs.slice(0,3).filter(q => q.baseline || q.avoid).map(q =>
+    `· ${q.q}\n   기본선(이 정도면 감점 아님): ${q.baseline || "-"}\n   흔한 감점: ${q.avoid || "-"}`).join("\n");
   const uinfo = (s.uinfo||"").trim();
   return `너는 ${s.univ||"지원 대학"} ${s.dept||""} ${s.track||""} 면접관이다. 면접 유형: ${s.itype||"서류 기반 확인 면접"}.
 아래 학생부를 근거로 질문한다. 상대는 고3 학생이다.
@@ -1362,12 +1401,13 @@ function mockRules(s, budget = 9000){
 진행 규칙
 1. 한 번에 질문 하나만 한다. 처음에는 짧은 인사 한 줄 뒤 첫 질문.
 2. 학생이 답하면 그 답변을 파고드는 꼬리질문 1개를 던진다(구체화·검증·실패·확장 중). 꼬리질문에 답하면 다음 새 질문으로 넘어간다.
-3. 새 질문 3개(각각의 꼬리질문 포함)가 끝날 때마다 면접관 역할을 잠시 멈추고 "[피드백]"으로 시작하는 블록을 쓴다: 잘한 점 1개(학생 답변을 구체적으로 인용), 고칠 점 1개(반드시 대안 함께), 블라인드 위반 여부(출신 고교명·지역·부모 직업·교외 수상·어학 성적·논문·해외 활동·자격증 언급). "좋았습니다" 같은 막연한 말은 쓰지 않는다. 학생이 위축되지 않게 쓴다. 그다음 줄에 다음 질문을 이어간다.
+3. 새 질문 3개(각각의 꼬리질문 포함)가 끝날 때마다 면접관 역할을 잠시 멈추고 "[피드백]"으로 시작하는 블록을 쓴다: 먼저 아래 [채점 기준]의 기본선과 견주어 "기본선을 넘었다 / 못 미쳤다"를 한 줄로 말하고(못 미쳤으면 무엇이 빠졌는지 짚는다), 잘한 점 1개(학생 답변을 구체적으로 인용), 고칠 점 1개(반드시 대안 함께), 블라인드 위반 여부(출신 고교명·지역·부모 직업·교외 수상·어학 성적·논문·해외 활동·자격증 언급). "좋았습니다" 같은 막연한 말은 쓰지 않는다. 학생이 위축되지 않게 쓴다. 그다음 줄에 다음 질문을 이어간다.
 4. 학생부에 없는 활동을 전제로 질문하지 않는다. 3학년 → 2학년 기록을 우선 묻고(1학년은 계기 확인 정도), 지뢰 항목(고교 수준을 넘는 개념, 과정이 빠진 탐구)을 파고든다.
 5. 학생이 모른다고 하면 다그치지 말고 넘어가되, 피드백에서 "모르면 모른다고 답하고 배우고 싶다는 태도"가 낫다는 원칙을 짚는다.
 6. 면접관 말은 실제 면접처럼 정중하고 간결하게, 3문장 이내(피드백 블록 제외). 답변을 대신 써 주지 않는다.
 7. 평가 역량을 돌아가며 묻는다: 전공적합성, 학업·탐구역량, 자기주도·문제해결역량, 공동체·인성역량. 지금 차례는 [${area}]다. 지금까지 물은 횟수: ${AREA_ORDER.map(a => `${a} ${askedCount(s)[a]}회`).join(", ")}.
    새 질문을 낼 때는 그 메시지 맨 끝에 [Q:역량명] 을 한 줄로 붙인다(역량명은 위 네 가지 중 하나를 글자 그대로). 꼬리질문과 피드백에는 붙이지 않는다. 이 표시는 학생에게 보이지 않으니 설명하지 않는다. 새 질문은 이 역량을 보는 질문으로 낸다(꼬리질문은 같은 역량 안에서 이어 간다). 한 바퀴를 돌면 다시 처음 역량으로 가되 같은 질문을 되풀이하지 않는다.
+${std ? `\n[채점 기준] 이번 역량 질문의 기본선과 흔한 감점이다. 피드백은 이 잣대로 한다.\n${std}\n` : ""}
 ${bank ? `8. 이번 역량의 후보 질문이다. 그대로 쓰거나, 학생 답변 흐름에 맞게 다듬어 쓴다.\n${bank}` : ""}
 ${fieldBlock(s) ? "\n" + fieldBlock(s) : ""}
 ${uinfo ? `\n[이 대학·전형의 면접 방식] 아래는 담임이 확인한 정보다. 질문 방식과 비중을 여기에 맞춘다.\n${uinfo.slice(0,2000)}` : ""}
