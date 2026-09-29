@@ -113,7 +113,9 @@ textarea{resize:vertical;line-height:1.6}
 .kw{display:inline-block;background:var(--accent-soft);color:var(--ink);border-radius:5px;padding:0 7px;margin:0 4px 2px 0;font-size:13px}
 .tails{margin:0;padding-left:18px}
 .ans > summary{cursor:pointer;font-size:13px;color:var(--accent);font-weight:600}
-.ans-t{margin:8px 0 0;padding:10px 12px;background:var(--accent-soft);border-radius:8px;line-height:1.75;max-width:64ch}
+.ans-k{margin-top:10px;font-size:12px;font-weight:600;color:var(--ink-2)}
+.ans-t{margin:4px 0 0;padding:10px 12px;background:var(--accent-soft);border-radius:8px;line-height:1.75;max-width:64ch}
+.ans-t.base{background:var(--ground);border:1px solid var(--line)}
 .checks label{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:14.5px}
 .checks input{width:auto}
 @media (max-width:560px){.qa dl{margin-left:0;grid-template-columns:1fr}.qa dt{padding-top:6px}}
@@ -853,13 +855,14 @@ function sheetPrompt(s, grade){
   질문마다 그 역량을 왜 보는지가 드러나게 만든다. 면접 유형이 제시문 기반이거나 인성·상황 면접이면 그 유형에 맞게 비중을 조정하고 warnings에 알린다.
 - 주요 질문 5~7개(3학년 기록 위주)에만 tails(꼬리질문) 2개를 붙인다(구체화: 숫자·기간·역할 / 검증: 개념 이해 / 실패: 안 된 지점과 대응 / 확장: 대학에서 이어갈 방법). 나머지는 tails: [].
 - keywords는 학생 본인 활동에서 나온 명사 3개. skeleton은 "결론 → 근거 활동 → 배운 점·변화 → 전공 연결" 흐름을 이 학생 내용으로 짧게(화살표로 연결). 말하면 30~60초 분량을 전제로 한다.
-- answer(예시 답변): 학생이 스스로 답해 본 뒤 견주어 볼 예시를 150~200자로 쓴다. 1인칭("저는")으로, 두괄식(결론 한 문장 먼저), 학생부에 있는 활동만 근거로 든다. 없는 활동·수치·감정을 지어내지 않는다. 미사여구 없이 면접에서 실제로 말할 법한 구어체로 쓴다.
+- baseline(기본선 답변): "잘한 답"이 아니라 "이 정도면 감점은 아니다" 하는 최소선을 80~120자로 쓴다. 결론 한 문장과 학생부 근거 한 가지만 담고, 배운 점은 짧게 붙인다. 꾸밈말·과장 없이 담백하게. 학생이 긴장해 짧게 답하더라도 이만큼은 말하게 하는 기준선이다.
+- answer(예시 답변): 기본선보다 한 걸음 더 나아가, 학생이 스스로 답해 본 뒤 견주어 볼 예시를 150~200자로 쓴다. 1인칭("저는")으로, 두괄식(결론 한 문장 먼저), 학생부에 있는 활동만 근거로 든다. 없는 활동·수치·감정을 지어내지 않는다. 미사여구 없이 면접에서 실제로 말할 법한 구어체로 쓴다.
 - closing: 마지막 한마디(1분)의 뼈대. 진로(career)와 이어지게.
 - 블라인드: 출신 고교명, 지역 특정 표현, 부모·친인척 직업·지위, 교외 수상, 공인 어학 성적, 논문·학회, 해외 활동, 자격증, 독서활동 상황의 도서명은 skeleton·keywords에 넣지 않는다(세특 본문에 녹아 있는 독서 내용은 가능). 학생부에 그런 요소가 있으면 warnings에 "블라인드 주의: …"로 적는다.
 - 입력이 학생부 원문이 아니라 교사 메모로 보이면 warnings 첫 줄에 "학생부 원문 미확인 — 실제 기재 문구와 대조 필요"를 넣는다.
 
 JSON 하나만 출력한다. 형식:
-{"career":{"title":"...","field":"...","basis":[{"grade":"1학년","point":"..."}],"fit":{"level":"높음","note":"..."},"shift":""},"narrative":"...","warnings":["..."],"mines":[{"item":"기재 내용 요약","evidence":"원문 인용","source":"3학년 세특-...","questions":["...","..."]}],"sections":[{"area":"전공적합성","questions":[{"q":"...","evidence":"원문 인용","source":"3학년 ...","keywords":["","",""],"skeleton":"... → ... → ... → ...","answer":"저는 ...","tails":["...","..."]}]}],"closing":"..."}
+{"career":{"title":"...","field":"...","basis":[{"grade":"1학년","point":"..."}],"fit":{"level":"높음","note":"..."},"shift":""},"narrative":"...","warnings":["..."],"mines":[{"item":"기재 내용 요약","evidence":"원문 인용","source":"3학년 세특-...","questions":["...","..."]}],"sections":[{"area":"전공적합성","questions":[{"q":"...","evidence":"원문 인용","source":"3학년 ...","keywords":["","",""],"skeleton":"... → ... → ... → ...","baseline":"저는 ...","answer":"저는 ...","tails":["...","..."]}]}],"closing":"..."}
 
 ${scope}
 
@@ -929,6 +932,7 @@ function rulesSheet(s){
   const Q = (q, p, extra={}) => ({
     q, evidence:p.sent, source:src(p), keywords:keywords(p.sent),
     skeleton:`결론 한 문장 → ${keywords(p.sent)[0] || "해당 활동"} 경험 → 배운 점·달라진 점 → ${dept} 연결`,
+    baseline:`${p.sent.replace(/(함|음|임).$/,"했습니다.")} 그 과정에서 배운 점을 ${dept} 공부로 이어 가고 싶습니다.`,
     answer:`저는 ${keywords(p.sent)[0] || "이 활동"}을(를) 계기로 답하겠습니다. ${p.sent.replace(/(함|음|임).$/,"했습니다.")} 이 과정에서 ${keywords(p.sent)[1] || "제가 맡은 부분"}을(를) 직접 챙기며 배운 점이 있었고, ${dept}에서 이어 가고 싶습니다. (규칙으로 엮은 예시이니 말투와 내용을 다듬어 쓰세요)`,
     tails: extra.tails ?? (tailN < 6 ? (tailN++, [TAILS[tailN % 4], TAILS[(tailN+2) % 4]]) : []),
   });
@@ -1138,6 +1142,7 @@ function sheetDocx(s){
       out.push(P(`근거 “${q.evidence||""}” [${q.source||""}]`, {sz:19, color:"666666", ind:280, after:20}));
       out.push(P(`키워드 ${(q.keywords||[]).join(" / ")}`, {sz:19, ind:280, after:20}));
       out.push(P(`뼈대 ${q.skeleton||""}`, {sz:19, ind:280, after:20}));
+      if (q.baseline) out.push(P(`기본선(감점 아님) ${q.baseline}`, {sz:19, ind:280, after:20, color:"777777"}));
       if (q.answer) out.push(P(`예시 답변 ${q.answer}`, {sz:19, ind:280, after:20, color:"1E6B57"}));
       for (const t of q.tails||[]) out.push(P("꼬리질문 "+t, {sz:19, ind:280, after:20}));
     }
@@ -1224,10 +1229,14 @@ function viewSheet(s){
           h("dt",null,"근거"), h("dd",null, h("q",{class:"quote",text:q.evidence||""}), srcTag(q.source), quoteTag(checkQuote(hay, q.evidence))),
           h("dt",null,"키워드"), h("dd",null,(q.keywords||[]).map(k=>h("span",{class:"kw",text:k}))),
           h("dt",null,"뼈대"), h("dd",{text:q.skeleton||""}),
-          q.answer ? [h("dt",null,"예시 답변"), h("dd",null, h("details",{class:"ans"},
+          (q.baseline || q.answer) ? [h("dt",null,"답변"), h("dd",null, h("details",{class:"ans"},
             h("summary",{text:"학생이 먼저 말해 본 뒤 열어 보세요"}),
-            h("p",{class:"ans-t",text:q.answer}),
-            h("p",{class:"hint",text:`${q.answer.length}자 · 외워서 그대로 말하면 티가 납니다. 순서와 근거만 참고하세요.`})))] : null,
+            q.baseline ? [h("div",{class:"ans-k",text:"기본선 — 이 정도면 감점은 아닙니다"}),
+              h("p",{class:"ans-t base",text:q.baseline}),
+              h("p",{class:"hint",text:`${q.baseline.length}자`})] : null,
+            q.answer ? [h("div",{class:"ans-k",text:"한 걸음 더 — 잘 다듬은 예시"}),
+              h("p",{class:"ans-t",text:q.answer}),
+              h("p",{class:"hint",text:`${q.answer.length}자 · 외워서 그대로 말하면 티가 납니다. 순서와 근거만 참고하세요.`})] : null))] : null,
           (q.tails||[]).length ? [h("dt",null,"꼬리질문"), h("dd",null,h("ol",{class:"tails"},q.tails.map(t=>h("li",{text:t}))))] : null
         )); })
     )),
