@@ -310,6 +310,7 @@ const EXAMPLES = [
 
 /* ───────── 저장소 ───────── */
 let students = [], selId = null, selApp = null, tab = "info", col = null, aiReady = null, diag = null;   // aiReady: null=확인 중
+let searchReady = false;                                     // 이 사람 계정에 검색 도구가 연결돼 있나 — 없으면 버튼을 숨긴다
 const LS = "interview-room-v1", LS_BANK = "interview-room-bank-v1";
 /* 대학·전형별 면접 방식은 학생이 아니라 대학에 딸린 정보다. 한 번 적어 두면 같은 곳을 지원한
    다른 학생에게도 자동으로 쓰인다. */
@@ -348,6 +349,10 @@ async function initStore(){
   }
   const probe = async n => { try { return await window.claude?.use?.(n) ? "됨" : "안 됨(null)"; } catch(e){ return "오류 " + (e?.code || e?.message || ""); } };
   aiReady = (await probe("sample")) === "됨";
+  try {                                                      // 연결 없는 사람에게 눌러도 안 되는 버튼을 보이지 않게 한다
+    const m = await window.claude?.use?.("mcp");
+    searchReady = !!(await m?.listTools("Firecrawl"))?.servers?.[0]?.tools?.length;
+  } catch { searchReady = false; }
   if (!aiReady) $("#store").textContent += " · AI 기능은 claude.ai 앱에서만";
   diag = {주소:location.host + location.pathname, "window.claude": window.claude ? "있음" : "없음",
     sample: await probe("sample"), db: await probe("db"), user: await probe("user"), downloads: await probe("downloads")};
@@ -784,6 +789,9 @@ ${hits}`, {cache:false});
     set(({tool_error:"검색 도구가 답하지 못했습니다. 잠시 후 다시 눌러 주세요.",
       not_granted:"검색 도구 사용이 허용되지 않았습니다.",
       server_not_connected:"검색 도구(Firecrawl)가 연결돼 있지 않습니다. claude.ai 설정에서 연결한 뒤 다시 눌러 주세요.",
+      needs_reauth:"검색 도구 연결이 만료됐습니다. claude.ai 설정에서 다시 연결해 주세요.",
+      selection_required:"같은 이름의 검색 도구가 여럿입니다. claude.ai 설정에서 하나만 남겨 주세요.",
+      cancelled:"검색을 멈췄습니다.",
       rate_limited:"사용량 한도에 걸렸습니다. 잠시 후 다시 눌러 주세요."})[e?.code] || `찾지 못했습니다 (${e?.code || "원인 불명"}).`, true);
   }
 }
@@ -918,9 +926,9 @@ function viewInfo(s){
           if (k !== "|"){ if (e.target.value.trim()) bank[k] = e.target.value; else delete bank[k]; bankSave(); }
           save(s);
         }}),
-      h("div",{class:"row"},
+      searchReady ? h("div",{class:"row"},
         h("button",{text:"웹에서 찾아 채우기",title:"입학처와 선행학습영향평가보고서를 검색해 요약합니다.",onclick:()=>fetchUinfo(s, searchStatus)}),
-        searchStatus),
+        searchStatus) : null,
       s._app.uinfoFromBank ? h("p",{class:"hint",text:`같은 ${s.univ} ${s.track} 지원자에게 적어 둔 내용을 가져왔습니다.`}) : null,
       Object.keys(bank).length ? h("details",{class:"raw"},
         h("summary",{text:`저장해 둔 대학·전형 ${Object.keys(bank).length}건`}),
