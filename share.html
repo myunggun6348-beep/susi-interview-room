@@ -118,6 +118,8 @@ textarea{resize:vertical;line-height:1.6}
 .msg.them{align-self:flex-start;background:var(--bubble-them);border:1px solid var(--line)}
 .msg.me{align-self:flex-end;background:var(--bubble-me)}
 .msg.fb{align-self:stretch;max-width:none;background:var(--warn-soft);border:1px solid var(--warn)}
+.q-area{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:4px}
+.chip.now{outline:2px solid var(--accent);outline-offset:1px}
 .meta{font-size:11.5px;color:var(--ink-2);margin-top:4px}
 .flags{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
 .timer{font:500 13px var(--f-mono)}
@@ -1289,10 +1291,24 @@ function fieldBlock(s){
   return f ? `[계열 경향 — ${f[0]}] ${f[1]} (일반적인 경향이다. 아래 '면접 방식'에 적힌 내용이 있으면 그쪽을 우선한다.)` : "";
 }
 
-// 학생이 답한 횟수로 지금 몇 번째 질문인지 어림잡아 다음 역량을 정한다(꼬리질문까지 두 번 답하면 한 문항)
+// 면접관이 새 질문마다 [Q:역량] 표시를 붙인다. 그것을 세어 다음 차례를 정한다(적게 물은 역량부터)
+const askedCount = s => {
+  const c = Object.fromEntries(AREA_ORDER.map(a => [a, 0]));
+  for (const m of s.chat || []) if (m.area && c[m.area] != null) c[m.area]++;
+  return c;
+};
 function nextArea(s){
-  const answered = (s.chat||[]).filter(m => m.role === "user").length;
-  return AREA_ORDER[Math.floor(answered / 2) % AREA_ORDER.length];
+  const c = askedCount(s);
+  return AREA_ORDER.reduce((best, a) => c[a] < c[best] ? a : best, AREA_ORDER[0]);
+}
+const Q_TAG = /\s*\[Q:\s*([^\]]{2,24})\]\s*/g;
+function readTag(text){                       // 표시를 읽어내고 화면에는 지운다
+  let area = null;
+  const clean = text.replace(Q_TAG, (_, name) => {
+    area = AREA_ORDER.find(a => a === name.trim()) || AREA_ORDER.find(a => name.includes(a.slice(0,2))) || area;
+    return " ";
+  }).trim();
+  return {clean, area};
 }
 function mockRules(s, budget = 9000){
   const sh = s.sheet ? JSON.stringify({career:s.sheet.career?.title, narrative:s.sheet.narrative, mines:s.sheet.mines?.map(m=>m.item)}) : "(질문지 없음)";
@@ -1309,7 +1325,8 @@ function mockRules(s, budget = 9000){
 4. 학생부에 없는 활동을 전제로 질문하지 않는다. 3학년 → 2학년 기록을 우선 묻고(1학년은 계기 확인 정도), 지뢰 항목(고교 수준을 넘는 개념, 과정이 빠진 탐구)을 파고든다.
 5. 학생이 모른다고 하면 다그치지 말고 넘어가되, 피드백에서 "모르면 모른다고 답하고 배우고 싶다는 태도"가 낫다는 원칙을 짚는다.
 6. 면접관 말은 실제 면접처럼 정중하고 간결하게, 3문장 이내(피드백 블록 제외). 답변을 대신 써 주지 않는다.
-7. 평가 역량을 돌아가며 묻는다: 전공적합성 → 학업·탐구역량 → 자기주도·문제해결역량 → 공동체·인성역량 순서로 한 문항씩. 지금 차례는 [${area}]다. 새 질문은 이 역량을 보는 질문으로 낸다(꼬리질문은 같은 역량 안에서 이어 간다). 한 바퀴를 돌면 다시 처음 역량으로 가되 같은 질문을 되풀이하지 않는다.
+7. 평가 역량을 돌아가며 묻는다: 전공적합성, 학업·탐구역량, 자기주도·문제해결역량, 공동체·인성역량. 지금 차례는 [${area}]다. 지금까지 물은 횟수: ${AREA_ORDER.map(a => `${a} ${askedCount(s)[a]}회`).join(", ")}.
+   새 질문을 낼 때는 그 메시지 맨 끝에 [Q:역량명] 을 한 줄로 붙인다(역량명은 위 네 가지 중 하나를 글자 그대로). 꼬리질문과 피드백에는 붙이지 않는다. 이 표시는 학생에게 보이지 않으니 설명하지 않는다. 새 질문은 이 역량을 보는 질문으로 낸다(꼬리질문은 같은 역량 안에서 이어 간다). 한 바퀴를 돌면 다시 처음 역량으로 가되 같은 질문을 되풀이하지 않는다.
 ${bank ? `8. 이번 역량의 후보 질문이다. 그대로 쓰거나, 학생 답변 흐름에 맞게 다듬어 쓴다.\n${bank}` : ""}
 ${fieldBlock(s) ? "\n" + fieldBlock(s) : ""}
 ${uinfo ? `\n[이 대학·전형의 면접 방식] 아래는 담임이 확인한 정보다. 질문 방식과 비중을 여기에 맞춘다.\n${uinfo.slice(0,2000)}` : ""}
@@ -1348,8 +1365,10 @@ async function sendMock(s, text, ui){
   $("#chat").append(live); $("#chat").scrollTop = 1e9;
   $("#m-send").disabled = true; $("#m-stop").hidden = false;
   try {
-    const {text:reply} = await sample(turns, {cache:false, signal:mockCtl.signal, onText:({text})=>{ live.textContent = text; $("#chat").scrollTop = 1e9; }});
-    s.chat.push({role:"assistant", content:reply});
+    const {text:reply} = await sample(turns, {cache:false, signal:mockCtl.signal,
+      onText:({text})=>{ live.textContent = text.replace(Q_TAG, " "); $("#chat").scrollTop = 1e9; }});
+    const {clean, area:asked} = readTag(reply);
+    s.chat.push({role:"assistant", content:clean, area:asked || undefined});
     askedAt = Date.now();
     save(s);
   } catch(e){
@@ -1502,7 +1521,9 @@ function viewMockAI(s){
   const msgs = chat.map(m => {
     if (m.role === "assistant"){
       const fb = m.content.includes("[피드백]");
-      return h("div",{class:"msg "+(fb?"fb":"them"),text:m.content});
+      return h("div",{class:"msg "+(fb?"fb":"them")},
+        m.area && h("div",{class:"q-area",text:m.area}),
+        m.content);
     }
     const over = m.secs != null && m.secs > 60;
     return h("div",{class:"msg me"}, m.content,
@@ -1519,7 +1540,12 @@ function viewMockAI(s){
     }, 1000);
   }
 
-  return h("div",{style:"display:grid;gap:12px"},
+  const cnt = askedCount(s), nx = nextArea(s);
+  const progress = h("div",{class:"row",style:"gap:6px"},
+    h("span",{class:"label",text:"역량별 질문 수"}),
+    AREA_ORDER.map(a => h("span",{class:"chip "+(cnt[a] ? "acc" : "gray")+(a===nx ? " now" : ""),
+      title: a===nx ? "다음 차례" : "", text:`${a} ${cnt[a]}`})));
+  return h("div",{style:"display:grid;gap:12px"}, progress,
     !s.sheet && h("div",{class:"note",text:"예상질문지를 먼저 만들면 면접관이 지뢰 항목을 우선 파고듭니다. 질문지 없이도 학생부만으로 진행할 수 있습니다."}),
     h("div",{class:"chat",id:"chat"}, msgs.length ? msgs : h("div",{class:"empty",text:"면접관이 한 번에 한 문항씩 묻고, 답하면 꼬리질문을 던집니다. 새 질문 3개마다 잘한 점·고칠 점·블라인드 위반 여부를 피드백합니다."})),
     h("label",{class:"f",for:"m-input"},"답변", box),
