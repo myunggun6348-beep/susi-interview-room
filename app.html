@@ -982,6 +982,12 @@ function rulesSheet(s){
   };
 }
 
+// 왜 안 되는지를 화면에 그대로 적는다 — 주소만 봐도 원인이 드러난다
+function whyNoAI(){
+  const host = location.host || "내 컴퓨터 파일";
+  if (!window.claude) return `여기(${host})에는 Claude가 없습니다. claude.ai 앱 링크에서 열거나 ‘AI 없이 만들기’를 쓰세요.`;
+  return `여기(${host})에서 Claude 사용 권한을 받지 못했습니다. 페이지를 새로 고쳐 보고, 그래도 안 되면 알려 주세요. 그동안은 ‘AI 없이 만들기’를 쓰시면 됩니다.`;
+}
 const gen = {};
 function genBar(s){
   const g = gen[gkey(s)] || {};
@@ -996,7 +1002,7 @@ function genBar(s){
       gen[gkey(s)] = {state:"done", msg:"규칙으로 만들었습니다."};
       save(s); tab = "sheet"; render();
     }}),
-    aiReady === false && !g.msg && h("span",{class:"status",text:"이 화면에서는 Claude가 안 될 수 있습니다. 눌러 보고 안 되면 ‘AI 없이 만들기’를 쓰세요."}),
+    aiReady === false && !g.msg && h("span",{class:"status",text:whyNoAI()}),
     run && h("button",{text:"중단",onclick:()=>g.ctl?.abort()}),
     g.state === "done" && tab !== "sheet" && h("button",{text:"예상질문지 보기 →",onclick:()=>{ tab = "sheet"; render(); }}),
     h("span",{class:"status"+(g.state==="err"?" err":""),text:g.msg||""}));
@@ -1009,7 +1015,7 @@ async function generateSheet(s){
   refreshGen(s);
   if (!recordText(s).trim()) return fail("학생부·정보 탭에서 학년별 세특·창체·행발을 먼저 넣어 주세요.");
   const sample = await window.claude?.use?.("sample");
-  if (!sample){ aiReady = false; render(); return fail("이 화면에서는 Claude를 쓸 수 없습니다. claude.ai 앱 링크에서 열거나 ‘AI 없이 만들기’를 쓰세요."); }
+  if (!sample){ aiReady = false; render(); return fail(whyNoAI()); }
   aiReady = true;
   g.ctl = new AbortController();
   try {
@@ -1053,7 +1059,7 @@ async function generateSheetSplit(s){
   const grades = ["3","2","1","0"].filter(x => hasGrade(s,x));
   if (!grades.length) return fail("학생부를 먼저 넣어 주세요.");
   const sample = await window.claude?.use?.("sample");
-  if (!sample){ aiReady = false; render(); return fail("이 화면에서는 Claude를 쓸 수 없습니다. claude.ai 앱 링크에서 열거나 ‘AI 없이 만들기’를 쓰세요."); }
+  if (!sample){ aiReady = false; render(); return fail(whyNoAI()); }
   aiReady = true;
   g.ctl = new AbortController();
   const total = grades.length + 1;
@@ -1279,7 +1285,7 @@ ${recordText(s, 14000)}`;
 
 async function sendMock(s, text, ui){
   const sample = await window.claude?.use?.("sample");
-  if (!sample){ ui.status.className="status err"; ui.status.textContent="이 화면에서는 AI 기능을 쓸 수 없습니다. claude.ai에서 열어 주세요."; return; }
+  if (!sample){ aiReady = false; ui.status.className="status err"; ui.status.textContent = whyNoAI(); return; }
   s.chat ||= [];
   if (text){
     const secs = askedAt ? Math.round((Date.now()-askedAt)/1000) : null;
@@ -1405,7 +1411,7 @@ function viewMock(s){
   const tabsRow = h("div",{class:"row",style:"margin-bottom:4px"},
     h("button",{class: mode==="ai" ? "primary" : "", text:"Claude 면접관",onclick:()=>{ s.mockMode="ai"; save(s); render(); }}),
     h("button",{class: mode==="rule" ? "primary" : "", text:"연습 모드 (AI 없음)",onclick:()=>{ s.mockMode="rule"; askedAt=Date.now(); save(s); render(); }}),
-    aiReady === false && h("span",{class:"muted",text:"Claude 면접관은 claude.ai 앱 링크에서만 됩니다."}));
+    aiReady === false && h("span",{class:"muted",text:whyNoAI()}));
   if (mode === "rule") return h("div",{style:"display:grid;gap:12px"}, tabsRow, viewPractice(s));
   return h("div",{style:"display:grid;gap:12px"}, tabsRow, viewMockAI(s));
 }
