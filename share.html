@@ -161,6 +161,9 @@ details.year[open] > summary::before{content:"▾"}
 .item-b.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
 .more{border:0;background:none;color:var(--accent);padding:0;font-size:13px;justify-self:start;text-decoration:underline}
 .tiny{padding:2px 7px;font-size:12px}
+.bank{display:grid;gap:8px;margin-top:6px}
+.bank-row{border-top:1px solid var(--line-2);padding-top:8px;display:grid;gap:3px;font-size:13px}
+.bank-row b{margin-right:8px}
 .raw{margin-top:8px}
 .raw > summary{cursor:pointer;font-size:13px;color:var(--accent)}
 .raw-pre{max-height:320px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12.5px/1.6 var(--f-mono);white-space:pre-wrap;word-break:break-all;user-select:text}
@@ -299,7 +302,18 @@ const EXAMPLES = [
 
 /* ───────── 저장소 ───────── */
 let students = [], selId = null, selApp = null, tab = "info", col = null, aiReady = null, diag = null;   // aiReady: null=확인 중
-const LS = "interview-room-v1";
+const LS = "interview-room-v1", LS_BANK = "interview-room-bank-v1";
+/* 대학·전형별 면접 방식은 학생이 아니라 대학에 딸린 정보다. 한 번 적어 두면 같은 곳을 지원한
+   다른 학생에게도 자동으로 쓰인다. */
+let bank = {};
+const bankKey = a => ((a.univ||"").trim() + "|" + (a.track||"").trim()).replace(/^|$/, "");
+let bankTimer = null;
+function bankSave(){
+  try { localStorage.setItem(LS_BANK, JSON.stringify(bank)); } catch {}
+  if (!col) return;
+  clearTimeout(bankTimer);
+  bankTimer = setTimeout(() => col.doc("_bank").set({items:bank}).catch(()=>{}), 800);
+}
 function lsGet(){ try { return JSON.parse(localStorage.getItem(LS) || "null"); } catch { return null; } }
 function lsSet(){ try { localStorage.setItem(LS, JSON.stringify(students.filter(s=>!s.example || s.dirty))); } catch {} }
 
@@ -313,13 +327,15 @@ async function initStore(){
       if (db && uid){
         col = db.collection("data/users/" + uid);
         const snap = await col.get();
-        loaded = snap.docs.map(d => ({...d.data(), id:d.id}));
+        loaded = snap.docs.filter(d => !d.id.startsWith("_")).map(d => ({...d.data(), id:d.id}));
+        bank = (snap.docs.find(d => d.id === "_bank")?.data()?.items) || {};
         $("#store").textContent = "선생님 계정에만 저장됨 · 다른 사람에게 보이지 않음";
       }
     }
   } catch { col = null; }
   if (!col){
     loaded = lsGet();
+    try { bank = JSON.parse(localStorage.getItem(LS_BANK) || "{}"); } catch { bank = {}; }
     $("#store").textContent = "이 브라우저에만 임시 저장됨";
   }
   const probe = async n => { try { return await window.claude?.use?.(n) ? "됨" : "안 됨(null)"; } catch(e){ return "오류 " + (e?.code || e?.message || ""); } };
@@ -444,6 +460,8 @@ function render(){
   const cur = list.find(x => x.id === selApp) || list[0];
   selApp = cur.id;
   const s = view(s0, cur);                       // 이 아래 화면 코드는 고른 지원 기준으로 읽고 쓴다
+  const bk = bank[bankKey(cur)];                 // 같은 대학·전형에 적어 둔 면접 방식 가져오기
+  if (bk && !(cur.uinfo||"").trim() && bankKey(cur) !== "|"){ cur.uinfo = bk; cur.uinfoFromBank = true; save(s0); }
   d.replaceChildren(
     h("div",{class:"panel-h"},
       h("h2",null, s0.name || "(이름 없음)"),
@@ -817,7 +835,22 @@ function viewInfo(s){
         h("span",{class:"muted",text:((s.uinfo||"").length).toLocaleString()+"자"})),
       h("textarea",{id:"f-uinfo",rows:3,value:s.uinfo||"",
         placeholder:"예) 서류 확인 면접 10분, 제시문 없음. 전년도 선행학습영향평가보고서에 나온 문항 유형: 지원 동기, 탐구 과정의 어려움, 협업 경험. 인성 질문 비중이 높음.",
-        oninput:e=>{ s.uinfo = e.target.value; save(s); }})),
+        oninput:e=>{                                    // 적는 순간 대학·전형 자료집에도 함께 남는다
+          s.uinfo = e.target.value; s._app.uinfoFromBank = false;
+          const k = bankKey(s._app);
+          if (k !== "|"){ if (e.target.value.trim()) bank[k] = e.target.value; else delete bank[k]; bankSave(); }
+          save(s);
+        }})),
+    bankKey(s._app) !== "|" && h("p",{class:"hint"},
+      s._app.uinfoFromBank ? `같은 ${s.univ} ${s.track} 지원자에게 적어 둔 내용을 가져왔습니다. 고치면 그 대학 자료도 함께 바뀝니다.`
+        : `여기 적은 내용은 ${s.univ||"이 대학"} ${s.track||""} 자료로 저장돼, 같은 곳을 지원한 다른 학생에게도 자동으로 채워집니다.`),
+    Object.keys(bank).length ? h("details",{class:"raw"},
+      h("summary",{text:`저장해 둔 대학·전형 면접 방식 ${Object.keys(bank).length}건`}),
+      h("div",{class:"bank"}, Object.entries(bank).map(([k, v]) => h("div",{class:"bank-row"},
+        h("div",null, h("b",{text:k.replace("|"," · ")}),
+          h("button",{class:"tiny",text:"이 지원에 넣기",onclick:()=>{ s.uinfo = v; s._app.uinfoFromBank = true; save(s); render(); }}),
+          h("button",{class:"tiny danger",text:"삭제",onclick:()=>{ delete bank[k]; bankSave(); render(); }})),
+        h("div",{class:"muted",text:v.slice(0,120) + (v.length > 120 ? "…" : "")})))) ) : null,
     h("p",{class:"hint",text:"대학 입학처 모집요강이나 선행학습영향평가보고서(전년도 면접 문항 공개)에서 확인한 내용을 적어 두면, 질문지와 모의면접이 그 대학 방식에 맞춰집니다. 지원마다 따로 저장됩니다."}),
     viewImport(s),
     h("div",{class:"row"},
