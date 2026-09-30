@@ -218,6 +218,10 @@ details.year[open] > summary::before{content:"▾"}
 .career-mini{font-size:12px;color:var(--accent);font-weight:600;margin-top:2px}
 .src.y3{background:var(--accent);color:var(--accent-ink);padding:0 6px;border-radius:4px}
 .dist{font-size:13px;color:var(--ink-2);margin:0 0 4px}
+.intro{background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;display:grid;gap:10px}
+.intro h2{font:700 18px/1.3 var(--f-disp);margin:0}
+.intro ol{margin:0;padding-left:20px;display:grid;gap:7px;font-size:14.5px;line-height:1.7}
+.intro .row{margin-top:2px}
 @media (prefers-reduced-motion:no-preference){.msg{animation:in .18s ease-out}@keyframes in{from{transform:translateY(4px)}to{transform:none}}}
 </style>
 
@@ -229,6 +233,8 @@ details.year[open] > summary::before{content:"▾"}
     </div>
     <div><div class="store" id="store">저장소 확인 중…</div></div>
   </header>
+
+  <div id="intro"></div>
 
   <div class="layout">
     <section class="panel" aria-labelledby="h-board">
@@ -517,7 +523,29 @@ function appBar(s0, cur){
       const a = newApp(); list.push(a); selApp = a.id; tab = "info"; save(s0); render();
     }}));
 }
+const LS_INTRO = "susi.intro.hidden";
+function renderIntro(){                                       // 예시만 있고 아직 안 닫았을 때만
+  const box = $("#intro");
+  if (!box) return;
+  const onlyExamples = students.every(s => s.example && !s.dirty);
+  let hidden = false; try { hidden = localStorage.getItem(LS_INTRO) === "1"; } catch {}
+  if (!onlyExamples || hidden){ box.replaceChildren(); return; }
+  box.replaceChildren(h("div",{class:"intro"},
+    h("h2",{text:"처음 오셨나요? 예시 학생으로 둘러보세요"}),
+    h("ol",null,
+      h("li",null,"아래 ", h("b",{text:"김하늘"}), "은 예시 학생입니다. 학생부(세특·창체·행발)가 이미 들어 있으니, '학생부·정보' 탭에서 어떤 내용이 들어가는지 보세요."),
+      h("li",null, h("b",{text:"'예상질문지'"}), " 탭을 열면 그 학생부에서 뽑은 질문과 ", h("b",{text:"지뢰 항목"}), "이 나옵니다. 질문마다 학생부 어느 문장에서 나왔는지 근거가 붙어 있습니다."),
+      h("li",null, h("b",{text:"지뢰 항목"}), "은 학생부에 적혀 있는데 학생이 설명하지 못하면 곤란해지는 대목입니다. 면접관이 반드시 묻는 곳이라 먼저 점검합니다."),
+      h("li",null,"내 학생으로 시작하려면 ", h("b",{text:"'+ 학생 추가'"}), "를 누르고 나이스 학생부 파일을 올리세요. 예시 학생은 지우셔도 됩니다.")),
+    h("div",{class:"row"},
+      h("button",{text:"알겠습니다 (다시 안 보기)",onclick:()=>{
+        try { localStorage.setItem(LS_INTRO, "1"); } catch {}
+        renderIntro();
+      }}))));
+}
+
 function render(){
+  renderIntro();
   renderBoard();
   const s0 = students.find(x => x.id === selId);
   const d = $("#detail");
