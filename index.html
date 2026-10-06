@@ -1184,6 +1184,12 @@ function rulesSheet(s){
 }
 
 // 왜 안 되는지를 화면에 그대로 적는다 — 주소만 봐도 원인이 드러난다
+const CLAUDE_URL = "https://claude.ai/artifact/GLcqioQhETrREXRpCMQtW4";
+function aiElsewhere(){
+  return h("span",{class:"status"}, "AI로 만들려면 ",
+    h("a",{href:CLAUDE_URL,target:"_blank",rel:"noopener",text:"claude.ai 링크"}),
+    "에서 열어 주세요. 여기서는 AI 없는 기능만 돌아갑니다.");
+}
 function whyNoAI(){
   const host = location.host || "내 컴퓨터 파일";
   if (!window.claude) return `여기(${host})에는 Claude가 없습니다. claude.ai 앱 링크에서 열거나 ‘AI 없이 만들기’를 쓰세요.`;
@@ -1194,8 +1200,8 @@ function genBar(s){
   const g = gen[gkey(s)] || {};
   const run = g.state === "run";
   return h("div",{class:"row",id:"gen-"+gkey(s)},
-    h("button",{class:"primary",disabled:run,text: run ? "만드는 중…" : "Claude로 만들기",onclick:()=>generateSheet(s)}),
-    h("button",{disabled:run,text:"전체 분석 (학년별로 나눠서)",title:"학생부가 길어도 잘리지 않게 3학년·2학년·1학년을 따로 분석해 합칩니다. 시간과 사용량이 더 듭니다.",onclick:()=>generateSheetSplit(s)}),
+    aiReady !== false && h("button",{class:"primary",disabled:run,text: run ? "만드는 중…" : "Claude로 만들기",onclick:()=>generateSheet(s)}),
+    aiReady !== false && h("button",{disabled:run,text:"전체 분석 (학년별로 나눠서)",title:"학생부가 길어도 잘리지 않게 3학년·2학년·1학년을 따로 분석해 합칩니다. 시간과 사용량이 더 듭니다.",onclick:()=>generateSheetSplit(s)}),
     h("button",{text:"AI 없이 만들기",title:"학생부 문장에서 규칙으로 질문을 뽑습니다. 돈도 인터넷도 들지 않습니다.",onclick:()=>{
       const sheet = rulesSheet(s);
       if (!sheet){ gen[gkey(s)] = {state:"err", msg:"학생부를 먼저 넣어 주세요."}; refreshGen(s); return; }
@@ -1203,7 +1209,7 @@ function genBar(s){
       gen[gkey(s)] = {state:"done", msg:"규칙으로 만들었습니다."};
       save(s); tab = "sheet"; render();
     }}),
-    aiReady === false && !g.msg && h("span",{class:"status",text:whyNoAI()}),
+    aiReady === false && !g.msg && aiElsewhere(),
     run && h("button",{text:"중단",onclick:()=>g.ctl?.abort()}),
     g.state === "done" && tab !== "sheet" && h("button",{text:"예상질문지 보기 →",onclick:()=>{ tab = "sheet"; render(); }}),
     h("span",{class:"status"+(g.state==="err"?" err":""),text:g.msg||""}));
@@ -1396,7 +1402,7 @@ function viewSheet(s){
         document.querySelectorAll(".sheet details").forEach(d => d.open = true);   // 접힌 답변 뼈대도 같이 찍히게
         print();
       }}),
-      h("button",{text:"한글·워드 파일로 저장 (.docx)",onclick:()=>exportDocx(s, dlStatus)}), dlStatus) : null);
+      window.claude && h("button",{text:"한글·워드 파일로 저장 (.docx)",onclick:()=>exportDocx(s, dlStatus)}), dlStatus) : null);
   if (!sh) return h("div",null, bar, h("div",{class:"empty",text:"만드는 길이 두 가지입니다. ‘Claude로 만들기’는 학생부를 읽고 지뢰 항목과 진로까지 판단합니다(claude.ai 앱에서만, 추가 요금 없음). ‘AI 없이 만들기’는 학생부 문장을 그대로 근거로 삼아 규칙으로 질문을 뽑습니다(어디서나, 인터넷도 필요 없음)."}));
 
   let n = 0;
@@ -1688,11 +1694,11 @@ function practiceSummary(s, qs){
 }
 
 function viewMock(s){
-  const mode = s.mockMode || (aiReady ? "ai" : "rule");
+  const mode = aiReady === false ? "rule" : (s.mockMode || (aiReady ? "ai" : "rule"));
   const tabsRow = h("div",{class:"row",style:"margin-bottom:4px"},
-    h("button",{class: mode==="ai" ? "primary" : "", text:"Claude 면접관",onclick:()=>{ s.mockMode="ai"; save(s); render(); }}),
+    aiReady !== false && h("button",{class: mode==="ai" ? "primary" : "", text:"Claude 면접관",onclick:()=>{ s.mockMode="ai"; save(s); render(); }}),
     h("button",{class: mode==="rule" ? "primary" : "", text:"연습 모드 (AI 없음)",onclick:()=>{ s.mockMode="rule"; askedAt=Date.now(); save(s); render(); }}),
-    aiReady === false && h("span",{class:"muted",text:whyNoAI()}));
+    aiReady === false && aiElsewhere());
   if (mode === "rule") return h("div",{style:"display:grid;gap:12px"}, tabsRow, viewPractice(s));
   return h("div",{style:"display:grid;gap:12px"}, tabsRow, viewMockAI(s));
 }
