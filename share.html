@@ -90,6 +90,7 @@ textarea{resize:vertical;line-height:1.6}
 .spacer{flex:1}
 .status{font-size:13px;color:var(--ink-2)}
 .status.err{color:var(--mine)}
+.status a,.hint a{color:var(--accent);font-weight:600}   /* 어두운 화면에서도 링크가 보이게 */
 .note{border:1px solid var(--line);background:var(--ground);border-radius:8px;padding:12px 14px;font-size:14px;line-height:1.7}
 .note.warn{border-color:var(--warn);background:var(--warn-soft);color:var(--ink)}
 /* 질문지 */
@@ -536,6 +537,28 @@ function renderIntro(){                                       // 예시만 있�
         try { localStorage.setItem(LS_INTRO, "1"); } catch {}
         renderIntro();
       }}))));
+}
+
+const ADIGA = "https://www.adiga.kr/ucp/uvt/uni/univView.do?menuId=PCUVTINF2000";
+function finder(s){
+  const univ = (s.univ || "").trim(), dept = (s.dept || "").trim();
+  const now = new Date(), yr = now.getMonth() >= 2 ? now.getFullYear() + 1 : now.getFullYear();   // 3월부터는 다음 학년도 입시
+  const g = q => "https://www.google.com/search?q=" + encodeURIComponent(q);
+  const go = (text, url, title) => h("a",{class:"btn",href:url,target:"_blank",rel:"noopener",text,title});
+  const own = h("input",{type:"search",placeholder:"직접 검색 (예: " + (univ || "○○대") + " 면접 시간)",style:"flex:1;min-width:180px"});
+  const ownGo = () => { if (own.value.trim()) window.open(g(own.value.trim()), "_blank", "noopener"); };
+  own.onkeydown = e => { if (e.key === "Enter") ownGo(); };
+
+  if (!univ) return h("p",{class:"hint",text:"위에서 지원 대학을 넣으면 그 대학 입학처와 자료를 바로 찾을 수 있습니다."});
+  return h("div",{style:"display:grid;gap:10px"},
+    h("div",{class:"row"},
+      go("입학처 홈페이지", g(univ + " 입학처"), "대학 입학처를 찾습니다"),
+      go(yr + "학년도 수시 모집요강", g(univ + " " + yr + "학년도 수시 모집요강 filetype:pdf"), "모집요강 PDF를 찾습니다"),
+      go("선행학습 영향평가 보고서", g(univ + " 선행학습 영향평가 보고서 면접"), "전년도 면접 문항이 실려 있습니다"),
+      dept && go("면접 기출·후기", g(univ + " " + dept + " 면접 기출"), "학과 면접 기출과 후기를 찾습니다"),
+      go("어디가 (대입정보포털)", ADIGA, "대학을 검색하면 모집요강과 입시결과가 나옵니다")),
+    h("div",{class:"row"}, own, h("button",{text:"검색",onclick:ownGo})),
+    h("p",{class:"hint",text:"새 탭에서 열립니다. 찾은 면접 방식을 아래 '대학 면접 방식'에 붙여넣으면 질문지와 모의면접에 반영됩니다. 선행학습 영향평가 보고서에는 전년도 실제 면접 문항이 실려 있어 가장 쓸모 있습니다."}));
 }
 
 function howTo(){                                             // 늘 열어 볼 수 있는 짧은 사용 순서
@@ -993,6 +1016,8 @@ function viewInfo(s){
             text: o === "자동 판단" ? (auto ? `자동 판단 (${auto[0]})` : "자동 판단 (판단 못 함)") : o,
             selected:(s.field||"자동 판단") === o}))),
         fld && h("span",{class:"muted",text:fld[1].split(".")[0] + "."}))),
+
+    sec("입시 자료 찾기", s.univ ? s.univ + (s.dept ? " " + s.dept : "") : null, finder(s)),
 
     secFold("대학 면접 방식", "적어 두면 질문지와 모의면접이 이 방식에 맞춰집니다", !!(s.uinfo||"").trim(),
       h("textarea",{id:"f-uinfo",rows:3,value:s.uinfo||"",
