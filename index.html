@@ -563,7 +563,7 @@ function howTo(){                                             // 늘 열어 볼 
 }
 
 function render(){
-  if (tab !== "mock" && cam.stream) camStop();
+  if (tab !== "mock"){ if (cam.stream) camStop(); hush(); }
   renderIntro();
   renderBoard();
   const s0 = students.find(x => x.id === selId);
@@ -1643,6 +1643,18 @@ function answerNotes(q, text, secs){
    얼굴을 보며 연습하고, 동의를 받은 뒤에만 녹화한다. 영상은 이 컴퓨터 밖으로 나가지 않는다.
    표정·시선 분석이나 점수 매기기는 하지 않는다 — 기계가 사람 얼굴을 채점할 일이 아니다. */
 const cam = {stream:null, consent:false, rec:null, chunks:[], url:null, listening:false, sr:null, err:""};
+let voiceOn = true, spokenKey = null;                // voiceOn: 질문을 읽어 줄지 / spokenKey: 같은 질문을 두 번 읽지 않게
+function speak(text){
+  const sy = window.speechSynthesis;
+  if (!sy || !text) return;
+  sy.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const ko = sy.getVoices().find(v => /^ko/i.test(v.lang));
+  if (ko) u.voice = ko;
+  u.lang = "ko-KR"; u.rate = 0.95;
+  sy.speak(u);
+}
+function hush(){ try { window.speechSynthesis?.cancel(); } catch {} }
 let camVideo = null;                                 // 한 번 만들어 계속 쓴다 (다시 그려도 카메라가 꺼지지 않게)
 
 async function camStart(){
@@ -1767,6 +1779,15 @@ function viewPractice(s){
       h("span",{class:"label",text:`${q.area} · ${p.i+1} / ${qs.length}`}),
       h("span",{class:"spacer"}),
       h("span",{class:"timer",id:"m-timer"})),
+    (() => {                                       // 새 질문이 뜨면 한 번만 읽는다 (다시 그려도 되풀이하지 않게)
+      const key = s.id + "|" + p.i;
+      if (voiceOn && p.stage === "q" && spokenKey !== key){ spokenKey = key; setTimeout(() => speak(q.q), 150); }
+      return null;
+    })(),
+    window.speechSynthesis ? h("div",{class:"row"},
+      h("button",{text:"질문 다시 듣기",onclick:()=>speak(q.q)}),
+      h("button",{text: voiceOn ? "읽어 주기 끄기" : "읽어 주기 켜기",onclick:()=>{ voiceOn = !voiceOn; if (!voiceOn) hush(); render(); }}),
+      h("span",{class:"muted",text: voiceOn ? "질문이 뜨면 저절로 읽어 줍니다" : "소리 없이 글로만 봅니다"})) : null,
     h("div",{class:"msg them",style:"max-width:none"}, q.q,
       h("div",{class:"meta"}, h("q",{class:"quote",text:q.evidence||""}), srcTag(q.source))),
 
