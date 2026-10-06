@@ -210,6 +210,10 @@ details.year[open] > summary::before{content:"▾"}
 .career-mini{font-size:12px;color:var(--accent);font-weight:600;margin-top:2px}
 .src.y3{background:var(--accent);color:var(--accent-ink);padding:0 6px;border-radius:4px}
 .dist{font-size:13px;color:var(--ink-2);margin:0 0 4px}
+.campanel{display:grid;gap:10px;border:1px solid var(--line);border-radius:10px;padding:12px}
+.cam{width:100%;max-width:320px;border-radius:8px;background:#000;display:block}
+a.btn{display:inline-block;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:14px;
+  color:var(--ink);text-decoration:none;background:var(--paper);text-align:center}
 .intro{background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;display:grid;gap:10px}
 .intro h2{font:700 18px/1.3 var(--f-disp);margin:0}
 .intro ol{margin:0;padding-left:20px;display:grid;gap:7px;font-size:14.5px;line-height:1.7}
@@ -537,6 +541,7 @@ function renderIntro(){                                       // 예시만 있�
 }
 
 function render(){
+  if (tab !== "mock" && cam.stream) camStop();
   renderIntro();
   renderBoard();
   const s0 = students.find(x => x.id === selId);
@@ -1612,6 +1617,97 @@ function answerNotes(q, text, secs){
   for (const b of blindCheck(text)) n.push(["blind", `블라인드 위반 — ${b.label} ‘${b.match}’`]);
   return n;
 }
+/* ───────── 카메라 연습 ─────────
+   얼굴을 보며 연습하고, 동의를 받은 뒤에만 녹화한다. 영상은 이 컴퓨터 밖으로 나가지 않는다.
+   표정·시선 분석이나 점수 매기기는 하지 않는다 — 기계가 사람 얼굴을 채점할 일이 아니다. */
+const cam = {stream:null, consent:false, rec:null, chunks:[], url:null, listening:false, sr:null, err:""};
+let camVideo = null;                                 // 한 번 만들어 계속 쓴다 (다시 그려도 카메라가 꺼지지 않게)
+
+async function camStart(){
+  cam.err = "";
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}, audio:true});
+    camVideo ||= h("video",{class:"cam",autoplay:true,playsinline:true,muted:true});
+    camVideo.srcObject = cam.stream;
+  } catch(e){
+    cam.err = e?.name === "NotAllowedError" ? "카메라를 쓸 수 없습니다. 브라우저가 묻는 창에서 '허용'을 눌러 주세요. 그래도 안 되면 claude.ai 안에서는 막혀 있을 수 있으니 배포된 주소에서 열어 보세요."
+      : e?.name === "NotFoundError" ? "카메라를 찾지 못했습니다. 연결을 확인해 주세요."
+      : "카메라를 켜지 못했습니다 (" + (e?.name || "원인 불명") + ").";
+  }
+  render();
+}
+function camStop(){
+  cam.stream?.getTracks().forEach(t => t.stop());
+  cam.stream = null; cam.rec = null;
+  if (camVideo) camVideo.srcObject = null;
+  srStop();
+}
+function recStart(){
+  if (!cam.stream) return;
+  cam.chunks = [];
+  if (cam.url){ URL.revokeObjectURL(cam.url); cam.url = null; }
+  cam.rec = new MediaRecorder(cam.stream);
+  cam.rec.ondataavailable = e => { if (e.data.size) cam.chunks.push(e.data); };
+  cam.rec.onstop = () => { cam.url = URL.createObjectURL(new Blob(cam.chunks, {type:"video/webm"})); render(); };
+  cam.rec.start();
+  render();
+}
+function srStop(){ cam.listening = false; try { cam.sr?.stop(); } catch {} cam.sr = null; }
+function srToggle(inputId){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  if (cam.listening){ srStop(); render(); return; }
+  const r = new SR();
+  r.lang = "ko-KR"; r.continuous = true; r.interimResults = false;
+  r.onresult = e => {                                // 받아쓴 말을 답변 칸에 이어 붙인다
+    const box = $(inputId); if (!box) return;
+    for (let i = e.resultIndex; i < e.results.length; i++)
+      if (e.results[i].isFinal) box.value += (box.value && !/\s$/.test(box.value) ? " " : "") + e.results[i][0].transcript.trim();
+    box.dispatchEvent(new Event("input"));
+  };
+  r.onend = () => { if (cam.listening){ try { r.start(); } catch {} } };   // 크롬은 조용하면 멈춘다 — 다시 켠다
+  r.onerror = e => { if (e.error === "not-allowed"){ cam.err = "마이크를 쓸 수 없습니다. 브라우저에서 허용해 주세요."; srStop(); render(); } };
+  cam.sr = r; cam.listening = true;
+  try { r.start(); } catch {}
+  render();
+}
+
+function camPanel(inputId){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recording = cam.rec?.state === "recording";
+
+  if (!cam.consent) return h("details",{class:"raw"},
+    h("summary",{text:"카메라 켜고 연습하기"}),
+    h("div",{class:"note"},
+      h("p",{style:"margin:0 0 8px"}, h("b",null,"녹화하기 전에 학생과 보호자의 동의를 받으세요.")),
+      h("ul",{style:"margin:0 0 10px;padding-left:18px"},
+        h("li",null,"영상과 소리는 ", h("b",null,"이 컴퓨터 안에만"), " 있습니다. 어디에도 올라가지 않습니다."),
+        h("li",null,"'영상 저장'을 누르지 않으면 창을 닫는 순간 사라집니다."),
+        h("li",null,"표정이나 시선을 분석하지 않고, 점수도 매기지 않습니다."),
+        h("li",null,"카메라 없이 글로만 연습해도 됩니다.")),
+      h("button",{class:"primary",text:"동의를 받았습니다 — 카메라 켜기",onclick:()=>{ cam.consent = true; camStart(); }})));
+
+  return h("div",{class:"campanel"},
+    cam.err ? h("div",{class:"note warn",text:cam.err}) : null,
+    cam.stream ? camVideo : null,
+    h("div",{class:"row"},
+      cam.stream
+        ? h("button",{text:"카메라 끄기",onclick:()=>{ camStop(); render(); }})
+        : h("button",{class:"primary",text:"카메라 켜기",onclick:camStart}),
+      cam.stream && (recording
+        ? h("button",{class:"danger",text:"녹화 정지",onclick:()=>cam.rec.stop()})
+        : h("button",{text:"녹화 시작",onclick:recStart})),
+      recording ? h("span",{class:"chip red",text:"● 녹화 중"}) : null,
+      SR ? h("button",{class: cam.listening ? "primary" : "", text: cam.listening ? "듣는 중 — 멈추기" : "말로 답하기",onclick:()=>srToggle(inputId)})
+         : h("span",{class:"muted",text:"받아쓰기는 크롬·엣지에서만 됩니다"})),
+    cam.url ? h("div",{class:"row"},
+      h("video",{class:"cam",controls:true,src:cam.url}),
+      h("div",{style:"display:grid;gap:6px"},
+        h("a",{class:"btn",href:cam.url,download:"면접연습.webm",text:"영상 저장"}),
+        h("button",{text:"영상 지우기",onclick:()=>{ URL.revokeObjectURL(cam.url); cam.url = null; render(); }}))) : null,
+    h("p",{class:"hint",text:"영상은 이 컴퓨터 밖으로 나가지 않습니다. 저장하지 않으면 창을 닫을 때 사라집니다."}));
+}
+
 function viewPractice(s){
   const qs = practiceQs(s);
   if (!qs.length) return h("div",{class:"note",text:"연습 모드는 예상질문지의 질문을 씁니다. 질문지 탭에서 먼저 만들어 주세요. 'AI 없이 만들기'로도 됩니다."});
@@ -1664,6 +1760,7 @@ function viewPractice(s){
         h("button",{class:"primary",text: p.i+1 < qs.length ? "다음 질문 →" : "마치기",onclick:next}),
         h("button",{text:"이 질문 다시",onclick:()=>{ p.stage="q"; p.log[p.i]=null; askedAt=Date.now(); save(s); render(); }}))
     ] : [
+      camPanel("#p-input"),
       h("label",{class:"f",for:"p-input"},"답변", box), flags,
       h("div",{class:"row"}, h("button",{class:"primary",text:"답변 제출",onclick:submit}),
         h("button",{text:"이 질문 건너뛰기",onclick:next}), h("span",{class:"spacer"}), cnt)
