@@ -194,6 +194,8 @@ details.year[open] > summary::before{content:"▾"}
 .bank-row b{margin-right:8px}
 .raw{margin-top:8px}
 .raw > summary{cursor:pointer;font-size:13px;color:var(--accent)}
+.howto{max-width:420px}
+.howto ol{margin:8px 0 0;padding-left:20px;display:grid;gap:6px;font-size:13.5px;line-height:1.65}
 .raw-pre{max-height:320px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:12.5px/1.6 var(--f-mono);white-space:pre-wrap;word-break:break-all;user-select:text}
 .chip.acc{background:var(--accent-soft);color:var(--accent)}
 /* 지원(수시 6장) 고르기 */
@@ -339,7 +341,7 @@ const EXAMPLES = [
 ];
 
 /* ───────── 저장소 ───────── */
-let students = [], selId = null, selApp = null, tab = "info", col = null, aiReady = null, diag = null;   // aiReady: null=확인 중
+let students = [], selId = null, selApp = null, tab = "info", col = null, aiReady = null;   // aiReady: null=확인 중
 let searchReady = false;                                     // 이 사람 계정에 검색 도구가 연결돼 있나 — 없으면 버튼을 숨긴다
 const LS = "interview-room-v1", LS_BANK = "interview-room-bank-v1";
 /* 대학·전형별 면접 방식은 학생이 아니라 대학에 딸린 정보다. 한 번 적어 두면 같은 곳을 지원한
@@ -392,11 +394,7 @@ async function initStore(){
     searchReady = !!(await m?.listTools("Firecrawl"))?.servers?.[0]?.tools?.length;
   } catch { searchReady = false; }
   if (!aiReady) $("#store").textContent += " · AI 기능은 claude.ai 앱에서만";
-  diag = {주소:location.host + location.pathname, "window.claude": window.claude ? "있음" : "없음",
-    sample: await probe("sample"), db: await probe("db"), user: await probe("user"), downloads: await probe("downloads")};
-  if (!aiReady) $("#store").after(h("details",{class:"raw",style:"margin-top:4px"},
-    h("summary",{text:"AI가 안 되는 이유 보기"}),
-    h("pre",{class:"raw-pre",text:Object.entries(diag).map(([k,v]) => `${k}: ${v}`).join("\n")})));
+  $("#store").after(howTo());
   students = loaded && loaded.length ? loaded : structuredClone(EXAMPLES);
   for (const s of students){                                  // 지원 하나만 쓰던 판 → 지원 목록으로
     if (!s.apps){
@@ -538,6 +536,22 @@ function renderIntro(){                                       // 예시만 있�
         try { localStorage.setItem(LS_INTRO, "1"); } catch {}
         renderIntro();
       }}))));
+}
+
+function howTo(){                                             // 늘 열어 볼 수 있는 짧은 사용 순서
+  const li = (n, t, d) => h("li",null, h("b",{text:t}), " — ", d);
+  return h("details",{class:"raw howto",style:"margin-top:4px"},
+    h("summary",{text:"사용 방법"}),
+    h("ol",null,
+      li(1, "학생 추가", "'+ 학생 추가'를 누르고 대학·학과를 넣은 뒤, 나이스 학생부 파일을 올리거나 직접 붙여넣습니다."),
+      li(2, "예상질문지", aiReady
+        ? "'Claude로 만들기'를 누르면 학생부를 읽고 질문과 지뢰 항목을 뽑습니다."
+        : "'AI 없이 만들기'를 누르면 학생부 문장에서 질문을 뽑습니다. 더 정확한 질문지는 claude.ai 링크에서 만드세요."),
+      li(3, "인쇄", "질문지 탭의 '인쇄'로 학생에게 줄 종이를 뽑습니다."),
+      li(4, "모의면접", "연습 모드에서 답변 길이와 시간을 점검합니다. 카메라를 켜고 말로 답하는 연습도 됩니다."),
+      li(5, "블라인드 점검", "답변에 부모 직업·학교명 같은 금지 표현이 있는지 확인합니다.")),
+    h("p",{class:"hint",text:"지뢰 항목은 학생부에 적혀 있는데 학생이 설명하지 못하면 곤란해지는 대목입니다. 면접관이 반드시 묻는 곳이라 먼저 점검합니다."}),
+    h("p",{class:"hint",text:"자료는 이 브라우저에만 남습니다. 만든 질문지는 그때그때 인쇄해 두세요."}));
 }
 
 function render(){
